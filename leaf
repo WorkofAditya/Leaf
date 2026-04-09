@@ -12,6 +12,12 @@ HERB = "🌿"
 DRY = "🍂"
 TREE = "🌳"
 
+RESET = "\033[0m"
+RED = "\033[91m"
+GREEN = "\033[92m"
+BLUE = "\033[94m"
+GRAY = "\033[90m"
+
 def leaf_init():
     os.makedirs(COMMITS_DIR, exist_ok=True)
     if not os.path.exists(LOG_FILE):
@@ -204,11 +210,11 @@ def leaf_status():
         return
 
     for f in added:
-        print(f"{SPROUT} Added: {f}")
+        print(f"{GRAY}{SPROUT} Added: {f}{RESET}")
     for f in modified:
-        print(f"{LEAF} Modified: {f}")
+        print(f"{BLUE}{LEAF} Modified: {f}{RESET}")
     for f in deleted:
-        print(f"{DRY} Deleted: {f}")
+        print(f"{RED}{DRY} Deleted: {f}{RESET}")
 
 def leaf_diff(commit_id=None):
     log = safe_load_log()
@@ -233,15 +239,28 @@ def leaf_diff(commit_id=None):
 
     all_files = set(target.keys()) | set(current.keys())
 
+    any_diff = False
+
     for f in all_files:
         old = target.get(f, [])
         new = current.get(f, [])
 
         if old != new:
+            any_diff = True
             print(f"\n{HERB} Diff: {f}")
+
             diff = difflib.unified_diff(old, new, lineterm="")
+
             for line in diff:
-                print(line)
+                if line.startswith("+") and not line.startswith("+++"):
+                    print(f"{GREEN}{line}{RESET}")
+                elif line.startswith("-") and not line.startswith("---"):
+                    print(f"{RED}{line}{RESET}")
+                else:
+                    print(line)
+
+    if not any_diff:
+        print(f"{HERB} No differences found")
 
 def leaf_restore(commit_id):
     if not os.path.exists(LOG_FILE):
