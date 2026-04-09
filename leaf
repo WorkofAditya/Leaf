@@ -77,6 +77,12 @@ def safe_save_log(log):
     with open(LOG_FILE, "w") as f:
         json.dump(log, f, indent=2)
 
+def leaf_get_last_state():
+    log = safe_load_log()
+    if not log:
+        return {}
+    return leaf_rebuild(log[-1]["id"], log)
+
 def leaf_save(msg):
     if not os.path.exists(VCS_DIR):
         print(f"{DRY} Not a repository")
@@ -174,6 +180,69 @@ def leaf_rebuild(commit_id, log):
 
     return None
 
+def leaf_status():
+    if not os.path.exists(LOG_FILE):
+        print(f"{DRY} No repository")
+        return
+
+    last = leaf_get_last_state()
+    current = set(leaf_get_all_files())
+    last_files = set(last.keys())
+
+    added = current - last_files
+    deleted = last_files - current
+    modified = []
+
+    for f in current & last_files:
+        if is_binary(f):
+            continue
+        if leaf_read_file(f) != last[f]:
+            modified.append(f)
+
+    if not added and not deleted and not modified:
+        print(f"{HERB} Clean working tree")
+        return
+
+    for f in added:
+        print(f"{SPROUT} Added: {f}")
+    for f in modified:
+        print(f"{LEAF} Modified: {f}")
+    for f in deleted:
+        print(f"{DRY} Deleted: {f}")
+
+def leaf_diff(commit_id=None):
+    log = safe_load_log()
+    if not log:
+        print(f"{DRY} No commits")
+        return
+
+    if commit_id is None:
+        commit_id = log[-1]["id"]
+
+    ids = [c["id"] for c in log]
+    if commit_id not in ids:
+        print(f"{DRY} Invalid commit id")
+        return
+
+    target = leaf_rebuild(commit_id, log)
+    current = {}
+
+    for f in leaf_get_all_files():
+        if not is_binary(f):
+            current[f] = leaf_read_file(f)
+
+    all_files = set(target.keys()) | set(current.keys())
+
+    for f in all_files:
+        old = target.get(f, [])
+        new = current.get(f, [])
+
+        if old != new:
+            print(f"\n{HERB} Diff: {f}")
+            diff = difflib.unified_diff(old, new, lineterm="")
+            for line in diff:
+                print(line)
+
 def leaf_restore(commit_id):
     if not os.path.exists(LOG_FILE):
         print(f"{DRY} No commits")
@@ -251,6 +320,13 @@ def main():
             print(f"{DRY} Missing commit id")
             return
         leaf_restore(sys.argv[2])
+    elif cmd == "status":
+        leaf_status()
+    elif cmd == "diff":
+        if len(sys.argv) == 3:
+            leaf_diff(sys.argv[2])
+        else:
+            leaf_diff()
 
 if __name__ == "__main__":
     main()
