@@ -1,10 +1,12 @@
 #!/usr/bin/env python3
-import os, sys, json, time, hashlib, difflib, shutil
+import os, sys, json, time, hashlib, difflib, shutil, types
+from importlib.machinery import SourceFileLoader
 
 VCS_DIR = ".leaf"
 COMMITS_DIR = os.path.join(VCS_DIR, "commits")
 LOG_FILE = os.path.join(VCS_DIR, "log.json")
 LOG_BACKUP = os.path.join(VCS_DIR, "log.bak")
+HEAD_MODULE_PATH = os.path.join(os.path.dirname(os.path.abspath(__file__)), "HEAD")
 
 LEAF = "🍃"
 SPROUT = "🌱"
@@ -18,11 +20,25 @@ GREEN = "\033[92m"
 BLUE = "\033[94m"
 GRAY = "\033[90m"
 
+_head_module = None
+
+def get_head_module():
+    global _head_module
+    if _head_module is not None:
+        return _head_module
+
+    loader = SourceFileLoader("leaf_head_module", HEAD_MODULE_PATH)
+    module = types.ModuleType(loader.name)
+    loader.exec_module(module)
+    _head_module = module
+    return _head_module
+
 def leaf_init():
     os.makedirs(COMMITS_DIR, exist_ok=True)
     if not os.path.exists(LOG_FILE):
         with open(LOG_FILE, "w") as f:
             json.dump([], f)
+    get_head_module().init_head(VCS_DIR)
     print(f"{SPROUT} Initialized empty leaf repository")
 
 def leaf_hash_commit(data):
@@ -53,7 +69,7 @@ def leaf_write_file(path, lines):
         f.writelines(lines)
 
 def load_ignore():
-    ignore = {".leaf", ".git", ".github", ".gitlab"}
+    ignore = {".leaf", ".git", ".github", ".gitlab", "__pycache__", "*.pyc"}
 
     if os.path.exists(".leafignore"):
         try:
@@ -67,40 +83,32 @@ def load_ignore():
 
     return ignore
 
-def is_ignored_path(path, ignore=None):
-    if ignore is None:
-        ignore = load_ignore()
+def leaf_ignore(target):
+    if not target:
+        print(f"{DRY} Missing file/folder to ignore")
+        return
 
-    path = os.path.normpath(path)
-    basename = os.path.basename(path)
-    parts = path.split(os.sep)
+    existing = set()
+    if os.path.exists(".leafignore"):
+        with open(".leafignore", "r") as f:
+            for line in f:
+                value = line.strip()
+                if value and not value.startswith("#"):
+                    existing.add(value)
 
-    for ig in ignore:
-        ig = ig.strip()
-        if not ig:
-            continue
+    if target in existing:
+        print(f"{HERB} Already ignored: {target}")
+        return
 
-        if ig.startswith("*.") and basename.endswith(ig[1:]):
-            return True
+    with open(".leafignore", "a") as f:
+        if os.path.exists(".leafignore") and os.path.getsize(".leafignore") > 0:
+            f.write("\n")
+        f.write(target)
 
-        ig_norm = os.path.normpath(ig)
-        ig_parts = ig_norm.split(os.sep)
+    print(f"{SPROUT} Added to .leafignore: {target}")
 
-        if len(ig_parts) == 1:
-            if ig_norm in parts:
-                return True
-        else:
-            if path == ig_norm:
-                return True
-            if path.startswith(ig_norm + os.sep):
-                return True
-
-    return False
-
-def leaf_get_all_files(extra_ignore=None):
+def leaf_get_all_files():
     ignore = load_ignore()
-    if extra_ignore:
-        ignore.update(extra_ignore)
     files = []
 
     for root, dirs, fs in os.walk("."):
@@ -111,7 +119,21 @@ def leaf_get_all_files(extra_ignore=None):
 
         for f in fs:
             path = os.path.relpath(os.path.join(root, f), ".")
-            if not is_ignored_path(path, ignore):
+
+            ignored = False
+
+            for ig in ignore:
+                # pattern like *.log
+                if ig.startswith("*.") and f.endswith(ig[1:]):
+                    ignored = True
+                    break
+
+                # exact file or folder name match anywhere
+                if ig in path.split(os.sep):
+                    ignored = True
+                    break
+
+            if not ignored:
                 files.append(path)
 
     return files
@@ -142,7 +164,15 @@ def leaf_get_last_state():
     log = safe_load_log()
     if not log:
         return {}
-    return leaf_rebuild(log[-1]["id"], log)
+    head_id = get_head_module().resolve_head(VCS_DIR, log[-1]["id"])
+    return leaf_rebuild(head_id, log) or {}
+
+def leaf_get_head_commit_id(log=None):
+    if log is None:
+        log = safe_load_log()
+    if not log:
+        return None
+    return get_head_module().resolve_head(VCS_DIR, log[-1]["id"])
 
 def leaf_save(msg):
     if not os.path.exists(VCS_DIR):
@@ -164,7 +194,6 @@ def leaf_save(msg):
         "deleted": []
     }
 
-    ignore = load_ignore()
     current_files = set(leaf_get_all_files())
 
     if not log:
@@ -177,10 +206,7 @@ def leaf_save(msg):
         prev_files = set(previous_state.keys())
 
 
-        deleted = {
-            file for file in (prev_files - current_files)
-            if not is_ignored_path(file, ignore)
-        }
+        deleted = prev_files - current_files
         commit_data["deleted"] = list(deleted)
 
         for file in current_files:
@@ -206,6 +232,7 @@ def leaf_save(msg):
 
     log.append(commit_data)
     safe_save_log(log)
+    get_head_module().write_head(VCS_DIR, commit_id)
 
     print(f"{LEAF} Saved commit {commit_id}")
 
@@ -244,10 +271,9 @@ def leaf_status():
         print(f"{DRY} No repository")
         return
 
-    ignore = load_ignore()
     last = leaf_get_last_state()
     current = set(leaf_get_all_files())
-    last_files = {f for f in last.keys() if not is_ignored_path(f, ignore)}
+    last_files = set(last.keys())
 
     added = current - last_files
     deleted = last_files - current
@@ -277,16 +303,14 @@ def leaf_diff(commit_id=None):
         return
 
     if commit_id is None:
-        commit_id = log[-1]["id"]
+        commit_id = leaf_get_head_commit_id(log)
 
     ids = [c["id"] for c in log]
     if commit_id not in ids:
         print(f"{DRY} Invalid commit id")
         return
 
-    ignore = load_ignore()
     target = leaf_rebuild(commit_id, log)
-    target = {f: lines for f, lines in target.items() if not is_ignored_path(f, ignore)}
     current = {}
 
     for f in leaf_get_all_files():
@@ -335,7 +359,7 @@ def leaf_restore(commit_id):
         print(f"{DRY} Restore failed")
         return
 
-    temp_dir = ".leaf_restore_tmp"
+    temp_dir = os.path.join(VCS_DIR, "restore_tmp")
     if os.path.exists(temp_dir):
         shutil.rmtree(temp_dir)
     os.makedirs(temp_dir)
@@ -346,7 +370,7 @@ def leaf_restore(commit_id):
         with open(full, "w") as f:
             f.writelines(content)
 
-    current_files = set(leaf_get_all_files(extra_ignore={temp_dir}))
+    current_files = set(leaf_get_all_files())
     target_files = set(files.keys())
 
     for f in current_files - target_files:
@@ -362,6 +386,7 @@ def leaf_restore(commit_id):
         shutil.copy2(src, dst)
 
     shutil.rmtree(temp_dir)
+    get_head_module().write_head(VCS_DIR, commit_id)
 
     print(f"{TREE} Restored to commit {commit_id}")
 
@@ -372,8 +397,13 @@ def leaf_log():
 
     log = safe_load_log()
 
+    head_id = leaf_get_head_commit_id(log)
+
     for c in reversed(log):
+        marker = " (HEAD)" if c["id"] == head_id else ""
         print(f"\n{HERB} Commit: {c['id']}")
+        if marker:
+            print(f"{TREE} Pointer:{marker}")
         print(f"{LEAF} Message: {c['message']}")
         print(f"{SPROUT} Time: {c['time']}")
 
@@ -402,6 +432,11 @@ def main():
             leaf_diff(sys.argv[2])
         else:
             leaf_diff()
+    elif cmd == "ignore":
+        if len(sys.argv) < 3:
+            print(f"{DRY} Missing file/folder name")
+            return
+        leaf_ignore(" ".join(sys.argv[2:]))
 
 if __name__ == "__main__":
     main()
