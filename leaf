@@ -67,8 +67,40 @@ def load_ignore():
 
     return ignore
 
-def leaf_get_all_files():
+def is_ignored_path(path, ignore=None):
+    if ignore is None:
+        ignore = load_ignore()
+
+    path = os.path.normpath(path)
+    basename = os.path.basename(path)
+    parts = path.split(os.sep)
+
+    for ig in ignore:
+        ig = ig.strip()
+        if not ig:
+            continue
+
+        if ig.startswith("*.") and basename.endswith(ig[1:]):
+            return True
+
+        ig_norm = os.path.normpath(ig)
+        ig_parts = ig_norm.split(os.sep)
+
+        if len(ig_parts) == 1:
+            if ig_norm in parts:
+                return True
+        else:
+            if path == ig_norm:
+                return True
+            if path.startswith(ig_norm + os.sep):
+                return True
+
+    return False
+
+def leaf_get_all_files(extra_ignore=None):
     ignore = load_ignore()
+    if extra_ignore:
+        ignore.update(extra_ignore)
     files = []
 
     for root, dirs, fs in os.walk("."):
@@ -79,21 +111,7 @@ def leaf_get_all_files():
 
         for f in fs:
             path = os.path.relpath(os.path.join(root, f), ".")
-
-            ignored = False
-
-            for ig in ignore:
-                # pattern like *.log
-                if ig.startswith("*.") and f.endswith(ig[1:]):
-                    ignored = True
-                    break
-
-                # exact file or folder name match anywhere
-                if ig in path.split(os.sep):
-                    ignored = True
-                    break
-
-            if not ignored:
+            if not is_ignored_path(path, ignore):
                 files.append(path)
 
     return files
@@ -146,6 +164,7 @@ def leaf_save(msg):
         "deleted": []
     }
 
+    ignore = load_ignore()
     current_files = set(leaf_get_all_files())
 
     if not log:
@@ -158,7 +177,10 @@ def leaf_save(msg):
         prev_files = set(previous_state.keys())
 
 
-        deleted = prev_files - current_files
+        deleted = {
+            file for file in (prev_files - current_files)
+            if not is_ignored_path(file, ignore)
+        }
         commit_data["deleted"] = list(deleted)
 
         for file in current_files:
@@ -222,9 +244,10 @@ def leaf_status():
         print(f"{DRY} No repository")
         return
 
+    ignore = load_ignore()
     last = leaf_get_last_state()
     current = set(leaf_get_all_files())
-    last_files = set(last.keys())
+    last_files = {f for f in last.keys() if not is_ignored_path(f, ignore)}
 
     added = current - last_files
     deleted = last_files - current
@@ -261,7 +284,9 @@ def leaf_diff(commit_id=None):
         print(f"{DRY} Invalid commit id")
         return
 
+    ignore = load_ignore()
     target = leaf_rebuild(commit_id, log)
+    target = {f: lines for f, lines in target.items() if not is_ignored_path(f, ignore)}
     current = {}
 
     for f in leaf_get_all_files():
@@ -321,7 +346,7 @@ def leaf_restore(commit_id):
         with open(full, "w") as f:
             f.writelines(content)
 
-    current_files = set(leaf_get_all_files())
+    current_files = set(leaf_get_all_files(extra_ignore={temp_dir}))
     target_files = set(files.keys())
 
     for f in current_files - target_files:
