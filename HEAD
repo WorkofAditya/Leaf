@@ -5,6 +5,9 @@ import os
 def head_file_path(vcs_dir):
     return os.path.join(vcs_dir, "HEAD")
 
+def current_branch_path(vcs_dir):
+    return os.path.join(vcs_dir, "CURRENT_BRANCH")
+
 
 def init_head(vcs_dir):
     os.makedirs(vcs_dir, exist_ok=True)
@@ -12,6 +15,10 @@ def init_head(vcs_dir):
     if not os.path.exists(path):
         with open(path, "w") as f:
             f.write("")
+    branch_path = current_branch_path(vcs_dir)
+    if not os.path.exists(branch_path):
+        with open(branch_path, "w") as f:
+            f.write("main")
 
 
 def read_head(vcs_dir):
@@ -30,6 +37,22 @@ def write_head(vcs_dir, commit_id):
     path = head_file_path(vcs_dir)
     with open(path, "w") as f:
         f.write(commit_id.strip() if commit_id else "")
+
+def read_current_branch(vcs_dir):
+    path = current_branch_path(vcs_dir)
+    if not os.path.exists(path):
+        return None
+    try:
+        with open(path, "r") as f:
+            value = f.read().strip()
+            return value or None
+    except:
+        return None
+
+def write_current_branch(vcs_dir, branch_name):
+    path = current_branch_path(vcs_dir)
+    with open(path, "w") as f:
+        f.write(branch_name.strip() if branch_name else "")
 
 
 def resolve_head(vcs_dir, fallback_commit_id):
