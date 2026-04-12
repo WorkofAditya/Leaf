@@ -6,6 +6,7 @@ VCS_DIR = ".leaf"
 COMMITS_DIR = os.path.join(VCS_DIR, "commits")
 LOG_FILE = os.path.join(VCS_DIR, "log.json")
 LOG_BACKUP = os.path.join(VCS_DIR, "log.bak")
+BRANCHES_FILE = os.path.join(VCS_DIR, "branches.json")
 HEAD_MODULE_PATH = os.path.join(os.path.dirname(os.path.abspath(__file__)), "HEAD")
 
 LEAF = "🍃"
@@ -38,7 +39,11 @@ def leaf_init():
     if not os.path.exists(LOG_FILE):
         with open(LOG_FILE, "w") as f:
             json.dump([], f)
+    if not os.path.exists(BRANCHES_FILE):
+        with open(BRANCHES_FILE, "w") as f:
+            json.dump({"main": None}, f, indent=2)
     get_head_module().init_head(VCS_DIR)
+    get_head_module().write_current_branch(VCS_DIR, "main")
     print(f"{SPROUT} Initialized empty leaf repository")
 
 def leaf_hash_commit(data):
@@ -160,11 +165,45 @@ def safe_save_log(log):
     with open(LOG_FILE, "w") as f:
         json.dump(log, f, indent=2)
 
+def load_branches():
+    try:
+        with open(BRANCHES_FILE, "r") as f:
+            data = json.load(f)
+            if isinstance(data, dict):
+                return data
+    except:
+        pass
+    return {"main": None}
+
+def save_branches(branches):
+    with open(BRANCHES_FILE, "w") as f:
+        json.dump(branches, f, indent=2)
+
+def commit_map(log):
+    return {c["id"]: c for c in log}
+
+def commit_chain(commit_id, cmap):
+    chain = []
+    seen = set()
+    current = commit_id
+    while current and current in cmap and current not in seen:
+        chain.append(current)
+        seen.add(current)
+        current = cmap[current].get("parent")
+    return chain
+
+def is_ancestor(ancestor_id, commit_id, cmap):
+    if not ancestor_id:
+        return True
+    return ancestor_id in set(commit_chain(commit_id, cmap))
+
 def leaf_get_last_state():
     log = safe_load_log()
     if not log:
         return {}
-    head_id = get_head_module().resolve_head(VCS_DIR, log[-1]["id"])
+    head_id = leaf_get_head_commit_id(log)
+    if not head_id:
+        return {}
     return leaf_rebuild(head_id, log) or {}
 
 def leaf_get_head_commit_id(log=None):
@@ -172,7 +211,13 @@ def leaf_get_head_commit_id(log=None):
         log = safe_load_log()
     if not log:
         return None
-    return get_head_module().resolve_head(VCS_DIR, log[-1]["id"])
+    head_id = get_head_module().read_head(VCS_DIR)
+    if head_id:
+        return head_id
+    branch = get_head_module().read_current_branch(VCS_DIR)
+    if branch:
+        return load_branches().get(branch)
+    return None
 
 def leaf_save(msg):
     if not os.path.exists(VCS_DIR):
@@ -189,6 +234,8 @@ def leaf_save(msg):
         "id": commit_id,
         "message": msg,
         "time": timestamp,
+        "branch": get_head_module().read_current_branch(VCS_DIR),
+        "parent": leaf_get_head_commit_id(log),
         "type": "diff",
         "changes": {},
         "deleted": []
@@ -232,15 +279,21 @@ def leaf_save(msg):
 
     log.append(commit_data)
     safe_save_log(log)
+    branches = load_branches()
+    branch = get_head_module().read_current_branch(VCS_DIR)
+    if branch:
+        branches[branch] = commit_id
+        save_branches(branches)
     get_head_module().write_head(VCS_DIR, commit_id)
 
     print(f"{LEAF} Saved commit {commit_id}")
 
 def leaf_rebuild(commit_id, log):
     files = {}
-
-    for c in log:
-        cid = c["id"]
+    cmap = commit_map(log)
+    chain = list(reversed(commit_chain(commit_id, cmap)))
+    for cid in chain:
+        c = cmap[cid]
         cpath = os.path.join(COMMITS_DIR, cid)
 
         if c["type"] == "snapshot":
@@ -260,11 +313,21 @@ def leaf_rebuild(commit_id, log):
                     if line.startswith("  ") or line.startswith("+ "):
                         patched.append(line[2:])
                 files[file] = patched
+    return files
 
-        if cid == commit_id:
-            return files
+def write_working_tree(files):
+    current_files = set(leaf_get_all_files())
+    target_files = set(files.keys())
+    for f in current_files - target_files:
+        try:
+            os.remove(f)
+        except:
+            pass
 
-    return None
+    for path, content in files.items():
+        os.makedirs(os.path.dirname(path) or ".", exist_ok=True)
+        with open(path, "w") as f:
+            f.writelines(content)
 
 def leaf_status():
     if not os.path.exists(LOG_FILE):
@@ -370,25 +433,86 @@ def leaf_restore(commit_id):
         with open(full, "w") as f:
             f.writelines(content)
 
-    current_files = set(leaf_get_all_files())
     target_files = set(files.keys())
-
-    for f in current_files - target_files:
-        try:
-            os.remove(f)
-        except:
-            pass
-
+    restored = {}
     for path in target_files:
         src = os.path.join(temp_dir, path)
-        dst = path
-        os.makedirs(os.path.dirname(dst) or ".", exist_ok=True)
-        shutil.copy2(src, dst)
+        restored[path] = leaf_read_file(src)
+    write_working_tree(restored)
 
     shutil.rmtree(temp_dir)
     get_head_module().write_head(VCS_DIR, commit_id)
 
     print(f"{TREE} Restored to commit {commit_id}")
+
+def leaf_branch(name=None):
+    branches = load_branches()
+    current = get_head_module().read_current_branch(VCS_DIR)
+    if name is None:
+        for b in sorted(branches.keys()):
+            marker = "*" if b == current else " "
+            print(f"{marker} {b}")
+        return
+    if name in branches:
+        print(f"{DRY} Branch already exists: {name}")
+        return
+    branches[name] = leaf_get_head_commit_id()
+    save_branches(branches)
+    print(f"{SPROUT} Created branch {name}")
+
+def leaf_checkout(branch_name):
+    branches = load_branches()
+    if branch_name not in branches:
+        print(f"{DRY} Unknown branch: {branch_name}")
+        return
+    target = branches[branch_name]
+    if target:
+        files = leaf_rebuild(target, safe_load_log()) or {}
+        write_working_tree(files)
+        get_head_module().write_head(VCS_DIR, target)
+    else:
+        write_working_tree({})
+        get_head_module().write_head(VCS_DIR, "")
+    get_head_module().write_current_branch(VCS_DIR, branch_name)
+    print(f"{TREE} Switched to branch {branch_name}")
+
+def leaf_merge(source_branch):
+    branches = load_branches()
+    current_branch = get_head_module().read_current_branch(VCS_DIR)
+    if source_branch not in branches:
+        print(f"{DRY} Unknown branch: {source_branch}")
+        return
+    if not current_branch:
+        print(f"{DRY} Merge requires being on a branch")
+        return
+    if source_branch == current_branch:
+        print(f"{HERB} Already on {source_branch}")
+        return
+
+    log = safe_load_log()
+    cmap = commit_map(log)
+    target = branches.get(current_branch)
+    source = branches.get(source_branch)
+
+    if not source:
+        print(f"{HERB} Nothing to merge from {source_branch}")
+        return
+    if target == source:
+        print(f"{HERB} Already up to date")
+        return
+    if is_ancestor(source, target, cmap):
+        print(f"{HERB} Already up to date")
+        return
+    if not is_ancestor(target, source, cmap):
+        print(f"{DRY} Non fast-forward merge not supported yet")
+        return
+
+    files = leaf_rebuild(source, log) or {}
+    write_working_tree(files)
+    branches[current_branch] = source
+    save_branches(branches)
+    get_head_module().write_head(VCS_DIR, source)
+    print(f"{TREE} Fast-forward merged {source_branch} into {current_branch}")
 
 def leaf_log():
     if not os.path.exists(LOG_FILE):
@@ -401,9 +525,7 @@ def leaf_log():
 
     for c in reversed(log):
         marker = " (HEAD)" if c["id"] == head_id else ""
-        print(f"\n{HERB} Commit: {c['id']}")
-        if marker:
-            print(f"{TREE} Pointer:{marker}")
+        print(f"\n{HERB} commit {c['id']}{marker}")
         print(f"{LEAF} Message: {c['message']}")
         print(f"{SPROUT} Time: {c['time']}")
 
@@ -437,6 +559,21 @@ def main():
             print(f"{DRY} Missing file/folder name")
             return
         leaf_ignore(" ".join(sys.argv[2:]))
+    elif cmd == "branch":
+        if len(sys.argv) == 2:
+            leaf_branch()
+        else:
+            leaf_branch(sys.argv[2])
+    elif cmd == "checkout":
+        if len(sys.argv) < 3:
+            print(f"{DRY} Missing branch name")
+            return
+        leaf_checkout(sys.argv[2])
+    elif cmd == "merge":
+        if len(sys.argv) < 3:
+            print(f"{DRY} Missing branch name to merge")
+            return
+        leaf_merge(sys.argv[2])
 
 if __name__ == "__main__":
     main()
