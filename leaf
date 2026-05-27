@@ -1,5 +1,6 @@
 #!/usr/bin/env python3
 import os, sys, json, time, hashlib, difflib, shutil, types
+import urllib.request
 from importlib.machinery import SourceFileLoader
 
 VCS_DIR = ".leaf"
@@ -529,6 +530,82 @@ def leaf_log():
         print(f"{LEAF} Message: {c['message']}")
         print(f"{SPROUT} Time: {c['time']}")
 
+def leaf_help():
+    print("""Leaf Version Control System
+
+USAGE:
+    leaf <command> [options]
+
+COMMANDS:
+    init
+        Initialize a new Leaf repository
+
+    save <message>
+        Create a new commit with current changes
+
+    log
+        Show commit history
+
+    restore <commit_id>
+        Restore repository to a specific commit
+
+    status
+        Show changed, added, and deleted files
+
+    diff [commit_id]
+        Show differences against HEAD or a commit
+
+    ignore <path>
+        Add file or directory to .leafignore
+
+    branch [name]
+        List branches or create a new branch
+
+    checkout <branch>
+        Switch to another branch
+
+    merge <branch>
+        Merge a branch into current branch
+
+    help
+        Show help information
+
+    version
+        Show current Leaf version
+
+ALIASES:
+    leaf help
+    leaf -h
+    leaf --help
+
+    leaf version
+    leaf -v
+
+EXAMPLES:
+    leaf init
+    leaf save "Initial commit"
+    leaf branch feature-login
+    leaf checkout feature-login
+
+Leaf VCS
+Fast. Minimal. Local.""")
+
+def leaf_version():
+    version_urls = [
+        "https://raw.githubusercontent.com/WorkofAditya/Leaf/refs/heads/main/version.txt",
+        "https://raw.githubusercontent.com/WorkofAditya/Leaf/main/version.txt",
+    ]
+    for version_url in version_urls:
+        try:
+            with urllib.request.urlopen(version_url, timeout=5) as response:
+                text = response.read().decode("utf-8").strip()
+                if text:
+                    print(text)
+                    return
+        except:
+            continue
+    print(f"{DRY} Could not fetch version from remote")
+
 def main():
     if len(sys.argv) < 2:
         return
@@ -574,6 +651,10 @@ def main():
             print(f"{DRY} Missing branch name to merge")
             return
         leaf_merge(sys.argv[2])
+    elif cmd in {"help", "-h", "--help"}:
+        leaf_help()
+    elif cmd in {"version", "v", "-v"}:
+        leaf_version()
 
 if __name__ == "__main__":
     main()
