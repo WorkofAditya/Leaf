@@ -5,6 +5,7 @@ COMMITS_DIR = os.path.join(VCS_DIR, "commits")
 LOG_FILE = os.path.join(VCS_DIR, "log.json")
 LOG_BACKUP = os.path.join(VCS_DIR, "log.bak")
 BRANCHES_FILE = os.path.join(VCS_DIR, "branches.json")
+SESSIONS_FILE = os.path.join(VCS_DIR, "sessions.json")
 HEAD_MODULE_PATH = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "HEAD")
 
 LEAF = "🍃"

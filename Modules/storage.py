@@ -2,7 +2,7 @@ import json
 import os
 import shutil
 
-from Modules.common import BRANCHES_FILE, LOG_BACKUP, LOG_FILE
+from Modules.common import BRANCHES_FILE, LOG_BACKUP, LOG_FILE, SESSIONS_FILE
 
 
 def safe_load_log():
@@ -37,3 +37,19 @@ def load_branches():
 def save_branches(branches):
     with open(BRANCHES_FILE, "w") as f:
         json.dump(branches, f, indent=2)
+
+
+def load_sessions():
+    try:
+        with open(SESSIONS_FILE, "r") as f:
+            data = json.load(f)
+            if isinstance(data, dict):
+                return data
+    except:
+        pass
+    return {}
+
+
+def save_sessions(sessions):
+    with open(SESSIONS_FILE, "w") as f:
+        json.dump(sessions, f, indent=2)
