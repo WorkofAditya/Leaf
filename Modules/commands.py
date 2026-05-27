@@ -10,7 +10,7 @@ from Modules.files import is_binary, leaf_get_all_files, leaf_read_file, leaf_sn
 from Modules.graph import commit_map, is_ancestor
 from Modules.head_utils import get_head_module
 from Modules.rebuild import leaf_rebuild, write_working_tree
-from Modules.storage import load_branches, safe_load_log, safe_save_log, save_branches
+from Modules.storage import load_branches, load_sessions, safe_load_log, safe_save_log, save_branches, save_sessions
 
 
 def leaf_init():
@@ -21,6 +21,7 @@ def leaf_init():
     if not os.path.exists(BRANCHES_FILE):
         with open(BRANCHES_FILE, "w") as f:
             f.write('{"main": null}')
+    save_sessions({})
     get_head_module().init_head(VCS_DIR)
     get_head_module().write_current_branch(VCS_DIR, "main")
     print(f"{SPROUT} Initialized empty leaf repository")
@@ -68,6 +69,10 @@ def leaf_save(msg):
     if branch:
         branches[branch] = commit_id
         save_branches(branches)
+        sessions = load_sessions()
+        if branch in sessions:
+            del sessions[branch]
+            save_sessions(sessions)
     get_head_module().write_head(VCS_DIR, commit_id)
     print(f"{LEAF} Saved commit {commit_id}")
 
@@ -204,16 +209,81 @@ def leaf_branch(name=None):
     branches[name] = leaf_get_head_commit_id(); save_branches(branches); print(f"{SPROUT} Created branch {name}")
 
 
+def _capture_working_state():
+    state = {}
+    for file in leaf_get_all_files():
+        if not is_binary(file):
+            state[file] = leaf_read_file(file)
+    return state
+
+
+def _has_uncommitted_changes(state, head_state):
+    for f in set(state.keys()) | set(head_state.keys()):
+        if state.get(f, []) != head_state.get(f, []):
+            return True
+    return False
+
+
+def _save_branch_session(branch):
+    head_state = leaf_get_last_state()
+    working_state = _capture_working_state()
+    sessions = load_sessions()
+    if _has_uncommitted_changes(working_state, head_state):
+        sessions[branch] = working_state
+    elif branch in sessions:
+        del sessions[branch]
+    save_sessions(sessions)
+
+
+def _restore_branch_session(branch, fallback_state):
+    sessions = load_sessions()
+    write_working_tree(sessions.get(branch, fallback_state) or {})
+
+
 def leaf_checkout(branch_name):
     branches = load_branches()
     if branch_name not in branches:
         print(f"{DRY} Unknown branch: {branch_name}"); return
+    current_branch = get_head_module().read_current_branch(VCS_DIR)
+    if current_branch:
+        _save_branch_session(current_branch)
     target = branches[branch_name]
     files = leaf_rebuild(target, safe_load_log()) if target else {}
-    write_working_tree(files or {})
+    _restore_branch_session(branch_name, files)
     get_head_module().write_head(VCS_DIR, target or "")
     get_head_module().write_current_branch(VCS_DIR, branch_name)
     print(f"{TREE} Switched to branch {branch_name}")
+
+
+def _has_session_changes(branch):
+    sessions = load_sessions()
+    if branch not in sessions:
+        return False
+    head_id = load_branches().get(branch)
+    head_state = leaf_rebuild(head_id, safe_load_log()) if head_id else {}
+    return _has_uncommitted_changes(sessions[branch], head_state)
+
+
+def _resolve_session_before_sensitive(branch):
+    if not _has_session_changes(branch):
+        return True
+    print(f"{HERB} Branch '{branch}' has unresolved session changes.")
+    print("Choose: [c]ommit session / [d]iscard session / [x]cancel")
+    choice = input("> ").strip().lower()
+    sessions = load_sessions()
+    if choice.startswith("c"):
+        saved = sessions.get(branch, {})
+        write_working_tree(saved)
+        print(f"{SPROUT} Session restored. Run 'leaf save <message>' to commit these changes, then retry merge.")
+        return False
+    if choice.startswith("d"):
+        if branch in sessions:
+            del sessions[branch]
+            save_sessions(sessions)
+        print(f"{DRY} Discarded saved session for branch '{branch}'")
+        return True
+    print(f"{DRY} Merge cancelled")
+    return False
 
 
 def leaf_merge(source_branch):
@@ -221,6 +291,8 @@ def leaf_merge(source_branch):
     if source_branch not in branches: print(f"{DRY} Unknown branch: {source_branch}"); return
     if not current_branch: print(f"{DRY} Merge requires being on a branch"); return
     if source_branch == current_branch: print(f"{HERB} Already on {source_branch}"); return
+    if not _resolve_session_before_sensitive(source_branch):
+        return
     log = safe_load_log(); cmap = commit_map(log); target, source = branches.get(current_branch), branches.get(source_branch)
     if not source or target == source or is_ancestor(source, target, cmap): print(f"{HERB} Already up to date"); return
     if not is_ancestor(target, source, cmap): print(f"{DRY} Non fast-forward merge not supported yet"); return
