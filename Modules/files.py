@@ -30,7 +30,7 @@ def leaf_write_file(path, lines):
 
 
 def load_ignore():
-    ignore = {".leaf", ".git", ".github", ".gitlab", "__pycache__", "*.pyc"}
+    ignore = {".leaf", ".git", ".github", ".gitlab", "__pycache__", "*.pyc", "HEAD", "leaf", "Modules"}
 
     if os.path.exists(".leafignore"):
         try:
