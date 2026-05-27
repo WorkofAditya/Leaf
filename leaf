@@ -531,26 +531,64 @@ def leaf_log():
         print(f"{SPROUT} Time: {c['time']}")
 
 def leaf_help():
-    commands = [
-        ("init", "leaf init", "Initialize an empty leaf repository."),
-        ("save", "leaf save <message>", "Save current changes as a new commit."),
-        ("log", "leaf log", "Show commit history."),
-        ("restore", "leaf restore <commit_id>", "Restore working tree to a commit."),
-        ("status", "leaf status", "Show added, modified, and deleted files."),
-        ("diff", "leaf diff [commit_id]", "Show differences against HEAD or a commit."),
-        ("ignore", "leaf ignore <file_or_folder>", "Add path to .leafignore."),
-        ("branch", "leaf branch [name]", "List branches or create a new branch."),
-        ("checkout", "leaf checkout <branch_name>", "Switch to a branch."),
-        ("merge", "leaf merge <branch_name>", "Fast-forward merge a branch into current."),
-        ("help", "leaf help | leaf -help | leaf --help | leaf -H", "Show this help text."),
-        ("version", "leaf v | leaf -v | leaf -V", "Print current leaf version."),
-    ]
+    print("""Leaf Version Control System
 
-    print(f"{TREE} Leaf Commands")
-    for name, usage, description in commands:
-        print(f"{HERB} {name}")
-        print(f"  Usage: {usage}")
-        print(f"  Description: {description}")
+USAGE:
+    leaf <command> [options]
+
+COMMANDS:
+    init
+        Initialize a new Leaf repository
+
+    save <message>
+        Create a new commit with current changes
+
+    log
+        Show commit history
+
+    restore <commit_id>
+        Restore repository to a specific commit
+
+    status
+        Show changed, added, and deleted files
+
+    diff [commit_id]
+        Show differences against HEAD or a commit
+
+    ignore <path>
+        Add file or directory to .leafignore
+
+    branch [name]
+        List branches or create a new branch
+
+    checkout <branch>
+        Switch to another branch
+
+    merge <branch>
+        Merge a branch into current branch
+
+    help
+        Show help information
+
+    version
+        Show current Leaf version
+
+ALIASES:
+    leaf help
+    leaf -h
+    leaf --help
+
+    leaf version
+    leaf -v
+
+EXAMPLES:
+    leaf init
+    leaf save "Initial commit"
+    leaf branch feature-login
+    leaf checkout feature-login
+
+Leaf VCS
+Fast. Minimal. Local.""")
 
 def leaf_version():
     version_urls = [
@@ -613,9 +651,9 @@ def main():
             print(f"{DRY} Missing branch name to merge")
             return
         leaf_merge(sys.argv[2])
-    elif cmd in {"help", "-help", "--help", "-H"}:
+    elif cmd in {"help", "-h", "--help"}:
         leaf_help()
-    elif cmd in {"v", "-v", "-V"}:
+    elif cmd in {"version", "v", "-v"}:
         leaf_version()
 
 if __name__ == "__main__":
