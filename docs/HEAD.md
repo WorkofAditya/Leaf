@@ -9,7 +9,6 @@ These are saved in:
 ```text
 .leaf/HEAD
 .leaf/CURRENT_BRANCH
-
 ```
 ## Important Functions
 ### init_head()
