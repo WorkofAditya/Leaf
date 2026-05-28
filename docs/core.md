@@ -8,9 +8,9 @@ Creates a SHA1 hash. Leaf uses this hash to generate unique commit IDs. The hash
  * Runtime values
 ### leaf_get_head_commit_id()
 Returns the current commit ID. The function checks:
- 1. HEAD file
- 2. Current branch pointer
-This makes Leaf more reliable when switching branches.
+ 1. Current branch pointer, when attached to a branch
+ 2. HEAD file, when no branch is active and the repository is detached
+This keeps attached branch history independent from detached HEAD movement.
 ### leaf_get_last_state()
 Rebuilds the latest repository state. It internally calls:
 ```python

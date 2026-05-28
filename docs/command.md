@@ -24,11 +24,13 @@ Creates a new commit. This function:
  2. Compares them with the previous state.
  3. Creates diffs.
  4. Stores commit metadata.
- 5. Updates branch pointers.
+ 5. Updates branch pointers when attached to a branch.
  6. Moves HEAD forward.
   - *Note: The first commit becomes a full snapshot. All later commits store only changes.*
 ### leaf_log()
-Prints commit history. It also marks the current HEAD commit.
+Prints commit history by walking parent commits from the current branch tip or detached HEAD. It also marks the current HEAD commit and does not show unrelated branch commits.
+### leaf_restore()
+Rebuilds a commit state, writes it to the working tree, and clears the current branch so the repository enters detached HEAD mode without moving any branch pointer.
 ### leaf_diff()
 Rebuilds a commit state and compares file changes. Useful for understanding what changed between saves.
 ## Internal Design

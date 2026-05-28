@@ -24,14 +24,16 @@ leaf init
 ```bash
 leaf save "initial setup"
 ```
-**View history:**
+**View current history:**
 ```bash
 leaf log
 ```
+`leaf log` follows the current branch or detached HEAD ancestry instead of printing unrelated commits from every branch.
 **Restore a commit:**
 ```bash
 leaf restore <commit-id>
 ```
+Restoring a commit checks out that commit in detached HEAD mode, so existing branch pointers stay unchanged until you explicitly checkout or create a branch.
 **Create branches:**
 ```bash
 leaf branch feature-ui
@@ -47,8 +49,8 @@ leaf checkout feature-ui
 ├── log.json       # Stores commit history and metadata.
 ├── branches.json  # Tracks branch pointers.
 ├── sessions.json  # Stores temporary branch states.
-├── HEAD           # Stores the current commit id.
-└── CURRENT_BRANCH # Stores the active branch name.
+├── HEAD           # Stores the detached/current commit id.
+└── CURRENT_BRANCH # Stores the active branch name, or empty when detached.
 ```
 ## Why Leaf Exists
 Leaf was built to make version control easier to understand. Most version control systems hide their internal behavior behind complicated commands and layers of abstraction.

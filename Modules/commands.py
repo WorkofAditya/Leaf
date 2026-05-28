@@ -7,7 +7,7 @@ import urllib.request
 from Modules.common import BLUE, BRANCHES_FILE, COMMITS_DIR, DRY, GREEN, GRAY, HERB, LEAF, LOG_FILE, RED, RESET, SPROUT, TREE, VCS_DIR
 from Modules.core import leaf_get_head_commit_id, leaf_get_last_state, leaf_hash_commit
 from Modules.files import is_binary, leaf_get_all_files, leaf_read_file, leaf_snapshot
-from Modules.graph import commit_map, is_ancestor
+from Modules.graph import commit_chain, commit_map, is_ancestor
 from Modules.head_utils import get_head_module
 from Modules.rebuild import leaf_rebuild, write_working_tree
 from Modules.storage import load_branches, load_sessions, safe_load_log, safe_save_log, save_branches, save_sessions
@@ -83,7 +83,12 @@ def leaf_log():
         return
     log = safe_load_log()
     head_id = leaf_get_head_commit_id(log)
-    for c in reversed(log):
+    cmap = commit_map(log)
+    if not head_id or head_id not in cmap:
+        print(f"{DRY} No commits")
+        return
+    for commit_id in commit_chain(head_id, cmap):
+        c = cmap[commit_id]
         marker = " (HEAD)" if c["id"] == head_id else ""
         print(f"\n{HERB} commit {c['id']}{marker}")
         print(f"{LEAF} Message: {c['message']}")
@@ -137,7 +142,8 @@ def leaf_restore(commit_id):
         return
     write_working_tree(files)
     get_head_module().write_head(VCS_DIR, commit_id)
-    print(f"{TREE} Restored to commit {commit_id}")
+    get_head_module().write_current_branch(VCS_DIR, "")
+    print(f"{TREE} Restored to commit {commit_id} (detached HEAD)")
 
 
 def leaf_status():
@@ -163,7 +169,7 @@ def leaf_status():
 
 
 def leaf_help():
-    print("""Leaf Version Control System\n\nUSAGE:\n    leaf <command> [options]\n\nCOMMANDS:\n    init\n        Initialize a new Leaf repository\n\n    save <message>\n        Create a new commit with current changes\n\n    log\n        Show commit history\n\n    restore <commit_id>\n        Restore repository to a specific commit\n\n    status\n        Show changed, added, and deleted files\n\n    diff [commit_id]\n        Show differences against HEAD or a commit\n\n    ignore <path>\n        Add file or directory to .leafignore\n\n    branch [name]\n        List branches or create a new branch\n\n    checkout <branch>\n        Switch to another branch\n\n    merge <branch>\n        Merge a branch into current branch\n\n    help\n        Show help information\n\n    version\n        Show current Leaf version\n\nALIASES:\n    leaf help\n    leaf -h\n    leaf --help\n\n    leaf version\n    leaf -v\n\nEXAMPLES:\n    leaf init\n    leaf save "Initial commit"\n    leaf branch feature-login\n    leaf checkout feature-login\n\nLeaf VCS\nFast. Minimal. Local.""")
+    print("""Leaf Version Control System\n\nUSAGE:\n    leaf <command> [options]\n\nCOMMANDS:\n    init\n        Initialize a new Leaf repository\n\n    save <message>\n        Create a new commit with current changes\n\n    log\n        Show current branch or detached HEAD history\n\n    restore <commit_id>\n        Restore repository to a specific commit in detached HEAD mode\n\n    status\n        Show changed, added, and deleted files\n\n    diff [commit_id]\n        Show differences against HEAD or a commit\n\n    ignore <path>\n        Add file or directory to .leafignore\n\n    branch [name]\n        List branches or create a new branch\n\n    checkout <branch>\n        Switch to another branch\n\n    merge <branch>\n        Merge a branch into current branch\n\n    help\n        Show help information\n\n    version\n        Show current Leaf version\n\nALIASES:\n    leaf help\n    leaf -h\n    leaf --help\n\n    leaf version\n    leaf -v\n\nEXAMPLES:\n    leaf init\n    leaf save "Initial commit"\n    leaf branch feature-login\n    leaf checkout feature-login\n\nLeaf VCS\nFast. Minimal. Local.""")
 
 
 def leaf_version():
