@@ -1,55 +1,107 @@
 import json
 import os
 import shutil
+import tempfile
 
-from Modules.common import BRANCHES_FILE, LOG_BACKUP, LOG_FILE, SESSIONS_FILE
+from Modules.common import (
+    BRANCHES_FILE,
+    INDEX_FILE,
+    LOG_BACKUP,
+    LOG_FILE,
+    MERGE_STATE_FILE,
+    REMOTES_FILE,
+    SESSIONS_FILE,
+    TAGS_FILE,
+)
+
+
+def _atomic_json_save(path, data):
+    os.makedirs(os.path.dirname(path) or ".", exist_ok=True)
+    fd, tmp = tempfile.mkstemp(prefix=os.path.basename(path), suffix=".tmp", dir=os.path.dirname(path) or ".")
+    with os.fdopen(fd, "w") as f:
+        json.dump(data, f, indent=2)
+        f.write("\n")
+    os.replace(tmp, path)
+
+
+def _load_json(path, default):
+    try:
+        with open(path, "r") as f:
+            data = json.load(f)
+        return data if isinstance(data, type(default)) else default
+    except (OSError, json.JSONDecodeError):
+        return default
 
 
 def safe_load_log():
-    try:
-        with open(LOG_FILE, "r") as f:
-            return json.load(f)
-    except:
-        if os.path.exists(LOG_BACKUP):
-            with open(LOG_BACKUP, "r") as f:
-                return json.load(f)
-        return []
+    data = _load_json(LOG_FILE, [])
+    if data:
+        return data
+    if os.path.exists(LOG_FILE):
+        return data
+    return _load_json(LOG_BACKUP, [])
 
 
 def safe_save_log(log):
     if os.path.exists(LOG_FILE):
         shutil.copy2(LOG_FILE, LOG_BACKUP)
-    with open(LOG_FILE, "w") as f:
-        json.dump(log, f, indent=2)
+    _atomic_json_save(LOG_FILE, log)
 
 
 def load_branches():
-    try:
-        with open(BRANCHES_FILE, "r") as f:
-            data = json.load(f)
-            if isinstance(data, dict):
-                return data
-    except:
-        pass
-    return {"main": None}
+    return _load_json(BRANCHES_FILE, {"main": None})
 
 
 def save_branches(branches):
-    with open(BRANCHES_FILE, "w") as f:
-        json.dump(branches, f, indent=2)
+    _atomic_json_save(BRANCHES_FILE, branches)
 
 
 def load_sessions():
-    try:
-        with open(SESSIONS_FILE, "r") as f:
-            data = json.load(f)
-            if isinstance(data, dict):
-                return data
-    except:
-        pass
-    return {}
+    return _load_json(SESSIONS_FILE, {})
 
 
 def save_sessions(sessions):
-    with open(SESSIONS_FILE, "w") as f:
-        json.dump(sessions, f, indent=2)
+    _atomic_json_save(SESSIONS_FILE, sessions)
+
+
+def load_index():
+    return _load_json(INDEX_FILE, {})
+
+
+def save_index(index):
+    _atomic_json_save(INDEX_FILE, index)
+
+
+def clear_index():
+    save_index({})
+
+
+def load_tags():
+    return _load_json(TAGS_FILE, {})
+
+
+def save_tags(tags):
+    _atomic_json_save(TAGS_FILE, tags)
+
+
+def load_merge_state():
+    return _load_json(MERGE_STATE_FILE, {})
+
+
+def save_merge_state(state):
+    _atomic_json_save(MERGE_STATE_FILE, state)
+
+
+def clear_merge_state():
+    try:
+        os.remove(MERGE_STATE_FILE)
+    except FileNotFoundError:
+        pass
+
+
+def load_remotes():
+    return _load_json(REMOTES_FILE, {})
+
+
+def save_remotes(remotes):
+    _atomic_json_save(REMOTES_FILE, remotes)
