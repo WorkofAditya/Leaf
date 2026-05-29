@@ -4,7 +4,7 @@ This file controls Leaf's current position inside repository history. It behaves
 ## What HEAD Stores
 Leaf stores two important values:
  1. Current commit ID
- 2. Current branch name
+ 2. Current branch name, which is empty in detached HEAD mode
 These are saved in:
 ```text
 .leaf/HEAD
@@ -16,14 +16,14 @@ Creates HEAD-related files during repository initialization. If the files do not
 ### read_head()
 Reads the current commit ID. If no commit exists yet, it returns None.
 ### write_head()
-Updates the current commit pointer. Whenever a new commit is saved, HEAD moves forward.
+Updates the current commit pointer. Whenever a new commit is saved, HEAD moves forward. When a branch is active, the branch pointer is the authoritative attached position; HEAD is used directly when the repository is detached.
 ### read_current_branch()
 Returns the active branch name. (Example: main)
 ### write_current_branch()
-Updates the active branch. Used during branch switching.
+Updates the active branch. Used during branch switching. Restore clears this value to enter detached HEAD mode without changing branch pointers.
 ## Why HEAD Matters
 Without HEAD, Leaf would not know:
  * Which commit is active.
  * Where history continues from.
- * Which branch the user is currently using.
+ * Which branch the user is currently using, or whether the user is detached.
 HEAD is basically Leaf's current memory position.
