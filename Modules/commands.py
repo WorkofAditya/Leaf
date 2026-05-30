@@ -207,6 +207,9 @@ def leaf_ignore(target):
 
 
 def leaf_branch(name=None):
+    if not os.path.exists(VCS_DIR):
+        print(f"{DRY} Not a repository")
+        return
     branches = load_branches(); current = get_head_module().read_current_branch(VCS_DIR)
     if name is None:
         for b in sorted(branches.keys()): print(f"{'*' if b == current else ' '} {b}")
