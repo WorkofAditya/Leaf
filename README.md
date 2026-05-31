@@ -65,8 +65,12 @@ leaf branch feature-ui
 leaf checkout feature-ui
 ```
 
-## GUI Frontend Prototype
-A frontend-only Leaf GUI concept is available in [`gui/index.html`](gui/index.html). It is intentionally not wired to the CLI or any backend yet, but it includes professional minimalist sections for repository overview, staging, diffs, history, branches, restore/reset, remotes, integrity checks, and the full command map.
+## Leaf Web GUI
+Leaf includes a local web interface that keeps the same minimalist style while connecting to the real Leaf CLI through a small Python backend. Start it from this repository and point it at any workspace:
+```bash
+python leaf_web.py --repo /path/to/project --port 8765
+```
+Then open `http://127.0.0.1:8765` to initialize repositories, edit files, stage paths, save commits, inspect status/diffs/history, manage branches and merges, restore/reset/revert commits, configure local remotes, clone, push/pull/fetch, and run integrity checks.
 
 ## Repository Structure
 ```text
