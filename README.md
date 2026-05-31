@@ -64,6 +64,10 @@ leaf branch feature-ui
 ```bash
 leaf checkout feature-ui
 ```
+
+## GUI Frontend Prototype
+A frontend-only Leaf GUI concept is available in [`gui/index.html`](gui/index.html). It is intentionally not wired to the CLI or any backend yet, but it includes professional minimalist sections for repository overview, staging, diffs, history, branches, restore/reset, remotes, integrity checks, and the full command map.
+
 ## Repository Structure
 ```text
 .leaf/
