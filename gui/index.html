@@ -3,205 +3,173 @@
   <head>
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1" />
-    <meta name="description" content="A real local web GUI for Leaf version control." />
-    <title>Leaf Web</title>
+    <meta name="description" content="Leaf Studio, a workflow-based web interface for Leaf version control." />
+    <title>Leaf Studio</title>
     <link rel="preconnect" href="https://fonts.googleapis.com" />
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
     <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet" />
     <link rel="stylesheet" href="styles.css" />
   </head>
   <body>
-    <div class="shell app-shell">
-      <aside class="sidebar" aria-label="Leaf workspace navigation">
-        <a class="brand" href="#overview" aria-label="Leaf Web home">
+    <div class="studio-shell">
+      <aside class="studio-sidebar" aria-label="Workspace navigation">
+        <a class="studio-brand" href="#workspace" aria-label="Leaf Studio home">
           <span class="brand-mark" aria-hidden="true">L</span>
-          <span>
-            <strong>Leaf</strong>
-            <small>Local Web</small>
-          </span>
+          <span><strong>Leaf Studio</strong><small>Version control workspace</small></span>
         </a>
-
-        <nav class="nav-list" aria-label="Primary sections">
-          <a href="#overview" class="active">Overview</a>
-          <a href="#workspace">Workspace</a>
-          <a href="#files">Files</a>
+        <nav class="studio-nav">
+          <a href="#workspace" class="active">Workspace</a>
           <a href="#changes">Changes</a>
           <a href="#history">History</a>
           <a href="#branches">Branches</a>
-          <a href="#recovery">Recovery</a>
-          <a href="#remotes">Remotes</a>
-          <a href="#integrity">Integrity</a>
-          <a href="#commands">Commands</a>
+          <a href="#files">Files</a>
+          <a href="#sync">Sync</a>
         </nav>
-
-        <div class="sidebar-card">
+        <div class="sidebar-card compact-card">
           <span class="status-dot"></span>
-          <p>Connected through</p>
-          <strong>leaf_web.py</strong>
+          <p id="connectionLabel">Connecting to local Leaf backend</p>
+          <strong id="sidebarBranch">No branch</strong>
         </div>
       </aside>
 
-      <main>
-        <section class="repo-hero" id="overview">
+      <main class="studio-main">
+        <section class="studio-topbar" id="workspace">
           <div>
-            <p class="eyebrow">GitHub-inspired local control center</p>
-            <h1>Manage a real Leaf repository from the browser.</h1>
-            <p class="hero-text">
-              This website is connected to the Leaf CLI through a local Python backend.
-              Pick a workspace, edit files, stage changes, save commits, inspect history,
-              branch, merge, restore, sync remotes, and run integrity checks.
-            </p>
+            <p class="eyebrow">Repository</p>
+            <h1 id="repoTitle">Open a Leaf workspace</h1>
+            <p id="repoSubtitle" class="hero-text">Choose a folder, then manage changes, history, branches, and sync through visual workflows.</p>
           </div>
-          <div class="repo-card">
-            <label for="repoPath">Repository path</label>
+          <div class="repo-picker">
+            <label for="repoPath">Workspace path</label>
             <div class="repo-input-row">
               <input id="repoPath" type="text" autocomplete="off" />
-              <button id="loadRepo" class="primary">Load</button>
+              <button id="loadRepo" class="primary">Open</button>
             </div>
-            <p id="repoHint" class="muted">Loading workspace...</p>
+            <button id="initializeRepo" class="button ghost full-width">Start tracking this folder</button>
           </div>
         </section>
 
-        <section class="metrics" aria-label="Repository overview cards">
-          <article><span>Repository</span><strong id="repoState">...</strong><p id="repoLocation">Detecting workspace</p></article>
-          <article><span>Current branch</span><strong id="currentBranch">...</strong><p id="headCommit">HEAD pending</p></article>
-          <article><span>Working files</span><strong id="fileCount">0</strong><p id="stagedCount">0 staged paths</p></article>
-          <article><span>Integrity</span><strong id="integrityState">Ready</strong><p id="mergeState">No merge in progress</p></article>
+        <section class="insight-grid" aria-label="Repository summary">
+          <article><span>Current branch</span><strong id="currentBranch">—</strong><p id="headCommit">No commits yet</p></article>
+          <article><span>Changed files</span><strong id="changedCount">0</strong><p id="stagedSummary">0 staged for commit</p></article>
+          <article><span>History</span><strong id="commitCount">0</strong><p id="latestCommit">No timeline yet</p></article>
+          <article><span>Repository health</span><strong id="repoHealth">Ready</strong><p id="mergeState">No merge in progress</p></article>
         </section>
 
-        <section class="workspace-grid" id="workspace">
-          <div class="panel command-panel">
+        <section class="workbench" id="changes">
+          <aside class="changes-column panel">
             <div class="panel-header">
+              <div><p class="eyebrow">Changes</p><h2>Review work</h2></div>
+              <button id="refreshState" class="button compact ghost">Refresh</button>
+            </div>
+
+            <div class="changes-toolbar">
+              <button id="stageAll" class="button compact">Stage all</button>
+              <button id="unstageAll" class="button compact ghost">Unstage all</button>
+            </div>
+
+            <div class="changes-split">
               <div>
-                <p class="eyebrow">Command center</p>
-                <h2>Run Leaf operations</h2>
+                <h3>Staged</h3>
+                <div id="stagedList" class="change-list"></div>
               </div>
-              <button class="button compact ghost" data-run="status">Refresh status</button>
+              <div>
+                <h3>Unstaged</h3>
+                <div id="unstagedList" class="change-list"></div>
+              </div>
             </div>
-            <div class="quick-command-grid">
-              <button data-run="init">init</button>
-              <button data-run="status">status</button>
-              <button data-run="log">log</button>
-              <button data-run="diff">diff</button>
-              <button data-run="fsck">fsck</button>
-              <button data-run="help">help</button>
-            </div>
-            <form id="customCommand" class="command-form">
-              <label>
-                Command
-                <select id="commandName">
-                  <option>add</option><option>save</option><option>reset</option><option>revert</option><option>restore</option>
-                  <option>ignore</option><option>branch</option><option>checkout</option><option>merge</option><option>tag</option>
-                  <option>remote</option><option>fetch</option><option>pull</option><option>push</option><option>clone</option>
-                  <option>version</option><option>status</option><option>log</option><option>diff</option><option>fsck</option>
-                </select>
-              </label>
-              <label>
-                Arguments
-                <input id="commandArgs" type="text" placeholder='Example: save "initial commit" or remote add origin ../remote' />
-              </label>
-              <button class="primary" type="submit">Run command</button>
+
+            <form id="commitForm" class="commit-box hidden">
+              <label for="commitMessage">Commit message</label>
+              <textarea id="commitMessage" rows="4" placeholder="Describe what changed"></textarea>
+              <button id="commitButton" class="primary" type="submit">Commit staged changes</button>
             </form>
-          </div>
+          </aside>
 
-          <div class="terminal-card live-terminal" aria-label="Leaf command output">
-            <div class="terminal-top"><span></span><span></span><span></span><strong id="lastCommand">leaf status</strong></div>
-            <pre><code id="commandOutput">Loading Leaf output...</code></pre>
+          <section class="diff-workspace panel">
+            <div class="panel-header">
+              <div><p class="eyebrow">Diff</p><h2 id="diffTitle">Select a changed file</h2></div>
+              <span id="selectedChangeStatus" class="pill">No file selected</span>
+            </div>
+            <pre class="visual-diff"><code id="diffOutput">Changed files will appear here automatically.</code></pre>
+          </section>
+        </section>
+
+        <section class="history-branches-grid">
+          <section class="panel" id="history">
+            <div class="panel-header">
+              <div><p class="eyebrow">Timeline</p><h2>Commit history</h2></div>
+            </div>
+            <ol class="timeline clickable-timeline" id="commitTimeline"></ol>
+          </section>
+
+          <section class="panel commit-detail-card">
+            <div class="panel-header"><div><p class="eyebrow">Commit details</p><h2 id="commitDetailTitle">Select a commit</h2></div></div>
+            <div id="commitDetails" class="commit-details muted">Click a commit in the timeline to view its message, parents, branch, tags, and changed files.</div>
+          </section>
+        </section>
+
+        <section class="panel branch-manager" id="branches">
+          <div class="panel-header">
+            <div><p class="eyebrow">Branches</p><h2>Branch manager</h2></div>
+            <label class="branch-switcher">Switch branch<select id="branchSelector"></select></label>
+          </div>
+          <div class="branch-layout">
+            <div>
+              <h3>Branches</h3>
+              <div id="branchList" class="branch-list"></div>
+            </div>
+            <div class="branch-actions-card">
+              <h3>Create branch</h3>
+              <input id="newBranchName" placeholder="feature/design-polish" />
+              <select id="branchStartPoint"></select>
+              <button id="createBranch" class="primary">Create branch</button>
+              <hr />
+              <h3>Merge into current branch</h3>
+              <p class="muted">Choose a branch card to merge it into the active branch.</p>
+              <div id="mergeCandidates" class="merge-candidates"></div>
+              <div id="mergeControls" class="merge-controls hidden">
+                <button id="continueMerge" class="button">Mark conflicts resolved</button>
+                <button id="abortMerge" class="button danger">Abort merge</button>
+              </div>
+            </div>
           </div>
         </section>
 
-        <section class="workspace-grid" id="files">
-          <div class="panel file-browser">
+        <section class="files-sync-grid">
+          <section class="panel" id="files">
             <div class="panel-header">
-              <div>
-                <p class="eyebrow">Repository files</p>
-                <h2>Browse and edit</h2>
-              </div>
+              <div><p class="eyebrow">Files</p><h2>Workspace files</h2></div>
               <button id="newFile" class="button compact">New file</button>
             </div>
-            <label class="search-box inline-search"><span>Filter</span><input id="fileSearch" type="search" placeholder="README.md, src/app.py..." /></label>
-            <div id="fileList" class="file-list real-files" aria-live="polite"></div>
-          </div>
-          <div class="panel editor-panel">
+            <label class="search-box inline-search"><span>Filter files</span><input id="fileSearch" type="search" placeholder="README.md, src/app.py..." /></label>
+            <div id="fileList" class="file-list real-files"></div>
+          </section>
+
+          <section class="panel editor-panel">
             <div class="panel-header">
-              <div>
-                <p class="eyebrow">Editor</p>
-                <h2 id="editorTitle">Select a file</h2>
-              </div>
-              <div class="editor-actions">
-                <button id="saveFile" class="button compact primary">Save file</button>
-                <button id="deleteFile" class="button compact danger">Delete</button>
-              </div>
+              <div><p class="eyebrow">Editor</p><h2 id="editorTitle">Select a file</h2></div>
+              <div class="editor-actions"><button id="saveFile" class="button compact primary">Save file</button><button id="deleteFile" class="button compact danger">Delete</button></div>
             </div>
             <input id="editorPath" class="path-input" placeholder="path/to/file.txt" />
             <textarea id="fileEditor" spellcheck="false" placeholder="Open or create a text file to edit it here."></textarea>
-          </div>
+          </section>
         </section>
 
-        <section class="workspace-grid" id="changes">
-          <div class="panel changes-panel">
-            <div class="panel-header">
-              <div><p class="eyebrow">Status</p><h2>Working tree</h2></div>
-              <button class="button compact ghost" data-run="add" data-args='["."]'>Stage all</button>
-            </div>
-            <pre class="status-output"><code id="statusOutput">No status yet.</code></pre>
-          </div>
-          <div class="panel diff-panel">
-            <div class="panel-header">
-              <div><p class="eyebrow">Diff viewer</p><h2>Line-by-line changes</h2></div>
-              <button class="button compact ghost" data-run="diff">Refresh diff</button>
-            </div>
-            <pre class="diff"><code id="diffOutput">No diff yet.</code></pre>
-          </div>
-        </section>
-
-        <section class="workspace-grid" id="history">
-          <div class="panel timeline-panel">
-            <div class="panel-header"><div><p class="eyebrow">History</p><h2>Commit timeline</h2></div><button class="button compact ghost" data-run="log">leaf log</button></div>
-            <ol class="timeline" id="commitTimeline"></ol>
-          </div>
-          <div class="panel graph-panel">
-            <div class="panel-header"><div><p class="eyebrow">GitHub-style refs</p><h2>Branches and tags</h2></div></div>
-            <div id="refList" class="ref-list"></div>
-          </div>
-        </section>
-
-        <section class="section" id="branches">
-          <div class="section-heading"><p class="eyebrow">Branches and merges</p><h2>Create, checkout, merge, continue, or abort</h2></div>
-          <div class="cards three operation-cards">
-            <article><h3>Create branch</h3><input id="branchName" placeholder="feature-ui" /><input id="branchCommit" placeholder="optional commit id" /><button id="createBranch">Create branch</button></article>
-            <article><h3>Checkout branch</h3><select id="checkoutBranch"></select><button id="checkoutSelected">Checkout</button></article>
-            <article><h3>Merge branch</h3><select id="mergeBranch"></select><button id="mergeSelected">Merge</button><button data-run="merge" data-args='["--continue"]'>Continue</button><button data-run="merge" data-args='["--abort"]' class="danger">Abort</button></article>
-          </div>
-        </section>
-
-        <section class="workspace-grid" id="recovery">
-          <div class="panel"><div class="panel-header"><div><p class="eyebrow">Restore and reset</p><h2>Safe recovery controls</h2></div></div><div class="control-stack"><input id="targetCommit" placeholder="commit id" /><button id="restoreCommit" class="recovery">Restore commit</button><button id="softReset" class="recovery">Soft reset</button><button id="hardReset" class="recovery danger">Hard reset</button><button id="revertCommit" class="recovery">Revert commit</button></div></div>
-          <div class="panel"><div class="panel-header"><div><p class="eyebrow">Tags and ignore</p><h2>Organize repository</h2></div></div><div class="control-stack"><input id="tagName" placeholder="tag name" /><input id="tagCommit" placeholder="optional commit id" /><button id="createTag">Create tag</button><input id="ignorePath" placeholder="path to ignore" /><button id="ignoreButton">Add ignore rule</button></div></div>
-        </section>
-
-        <section class="section" id="remotes">
-          <div class="section-heading"><p class="eyebrow">Synchronization</p><h2>Local path-based remote workflows</h2></div>
-          <div class="remote-layout">
-            <div class="remote-card"><span>Configured remotes</span><div id="remoteList" class="remote-list"></div></div>
-            <div class="remote-actions real-remote-actions">
-              <input id="remoteName" placeholder="origin" /><input id="remotePath" placeholder="../leaf-remote" />
-              <button id="addRemote">remote add</button><button id="fetchRemote">fetch</button><button id="pullRemote">pull main</button><button id="pushRemote">push main</button>
-              <input id="cloneSource" placeholder="source repo path" /><input id="cloneDest" placeholder="destination path" /><button id="cloneRepo">clone</button>
+        <section class="panel sync-panel" id="sync">
+          <div class="panel-header"><div><p class="eyebrow">Sync</p><h2>Remotes and publishing</h2></div><button id="checkIntegrity" class="button compact ghost">Check repository</button></div>
+          <div class="sync-layout">
+            <div><h3>Configured remotes</h3><div id="remoteList" class="remote-list"></div></div>
+            <div class="sync-actions">
+              <input id="remoteName" placeholder="origin" />
+              <input id="remotePath" placeholder="../leaf-remote" />
+              <button id="addRemote" class="button">Add remote</button>
+              <button id="fetchRemote" class="button">Fetch</button>
+              <button id="pullRemote" class="button">Pull current branch</button>
+              <button id="pushRemote" class="button primary">Push current branch</button>
             </div>
           </div>
-        </section>
-
-        <section class="workspace-grid" id="integrity">
-          <div class="panel health-panel"><div class="panel-header"><div><p class="eyebrow">Integrity</p><h2>Health checks</h2></div><button class="button compact ghost" data-run="fsck">leaf fsck</button></div><div class="health-list"><span><b></b> Commit directories</span><span><b></b> Parent references</span><span><b></b> Branch pointers</span><span><b></b> Tag pointers</span></div></div>
-          <div class="panel repo-panel"><div class="panel-header"><div><p class="eyebrow">.leaf metadata</p><h2>Live repository data</h2></div></div><pre><code id="metadataOutput">{}</code></pre></div>
-        </section>
-
-        <section class="section" id="commands">
-          <div class="section-heading split"><div><p class="eyebrow">Command map</p><h2>All Leaf CLI functions available from this site</h2></div><label class="search-box"><span>Search</span><input id="commandSearch" type="search" placeholder="branch, restore, remote..." /></label></div>
-          <div class="command-grid" id="commandGrid" aria-live="polite">
-            <article data-keywords="init repository setup"><code>leaf init</code><p>Create a new Leaf repository.</p></article><article data-keywords="status working tree staged conflicts"><code>leaf status</code><p>Inspect branch and working-tree state.</p></article><article data-keywords="add stage index"><code>leaf add &lt;path&gt;</code><p>Stage file contents in the index.</p></article><article data-keywords="save commit snapshot diff"><code>leaf save "message"</code><p>Create a snapshot or diff commit.</p></article><article data-keywords="log history ancestry"><code>leaf log</code><p>Review current branch or HEAD ancestry.</p></article><article data-keywords="diff changes compare"><code>leaf diff [commit]</code><p>Compare a commit with the working tree.</p></article><article data-keywords="restore checkout detached"><code>leaf restore &lt;commit&gt;</code><p>Rebuild a commit into the workspace.</p></article><article data-keywords="branch create pointer"><code>leaf branch [name] [commit]</code><p>List or create branch pointers.</p></article><article data-keywords="checkout switch branch"><code>leaf checkout &lt;branch&gt;</code><p>Switch to a branch and restore its state.</p></article><article data-keywords="merge continue abort conflict"><code>leaf merge &lt;branch&gt;</code><p>Merge another branch into the current one.</p></article><article data-keywords="tag label release"><code>leaf tag [name] [commit]</code><p>Create or list lightweight tags.</p></article><article data-keywords="reset hard soft unstage"><code>leaf reset [--soft|--hard] [commit]</code><p>Unstage paths or move branch pointers.</p></article><article data-keywords="revert undo commit"><code>leaf revert &lt;commit&gt;</code><p>Save a commit that reverses another.</p></article><article data-keywords="ignore exclude files"><code>leaf ignore &lt;path&gt;</code><p>Exclude generated or sensitive paths.</p></article><article data-keywords="remote origin add list"><code>leaf remote ...</code><p>Manage local path remotes.</p></article><article data-keywords="fetch remote sync"><code>leaf fetch &lt;remote&gt;</code><p>Fetch commits and branch pointers.</p></article><article data-keywords="pull remote merge"><code>leaf pull &lt;remote&gt; &lt;branch&gt;</code><p>Fetch then merge a remote branch.</p></article><article data-keywords="push remote publish"><code>leaf push &lt;remote&gt; &lt;branch&gt;</code><p>Copy local history to a remote repository.</p></article><article data-keywords="clone copy repository"><code>leaf clone &lt;source&gt; [dest]</code><p>Create a working copy from another Leaf repo.</p></article><article data-keywords="fsck integrity health"><code>leaf fsck</code><p>Validate commits, parents, branches, and tags.</p></article><article data-keywords="version about"><code>leaf version</code><p>Show the installed Leaf version.</p></article><article data-keywords="help usage"><code>leaf help</code><p>Display command usage guidance.</p></article>
-          </div>
+          <div id="activityLog" class="activity-log">Ready.</div>
         </section>
       </main>
     </div>

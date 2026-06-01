@@ -26,32 +26,6 @@ LEAF = ROOT / "leaf"
 GUI_DIR = ROOT / "gui"
 DEFAULT_PORT = 8765
 MAX_BODY = 2 * 1024 * 1024
-SAFE_COMMANDS = {
-    "init",
-    "status",
-    "log",
-    "diff",
-    "add",
-    "save",
-    "reset",
-    "revert",
-    "restore",
-    "ignore",
-    "branch",
-    "checkout",
-    "merge",
-    "tag",
-    "remote",
-    "fetch",
-    "pull",
-    "push",
-    "clone",
-    "fsck",
-    "version",
-    "help",
-}
-
-
 def read_json(path: Path, default):
     try:
         with path.open("r", encoding="utf-8") as handle:
@@ -101,7 +75,6 @@ def run_leaf(repo: Path, args: list[str], timeout: int = 30) -> dict:
         "returncode": result.returncode,
         "stdout": result.stdout,
         "stderr": result.stderr,
-        "command": "leaf " + " ".join(args),
     }
 
 
@@ -141,10 +114,81 @@ def repo_state(repo: Path) -> dict:
     if is_repo:
         state["status_text"] = run_leaf(repo, ["status"])["stdout"]
         state["diff_text"] = run_leaf(repo, ["diff"])["stdout"]
+        state["changes"] = parse_status(state["status_text"], state["index"])
     else:
-        state["status_text"] = "Not a Leaf repository. Run leaf init to start."
+        state["status_text"] = "Not a Leaf repository. Start tracking this folder to begin."
         state["diff_text"] = ""
+        state["changes"] = []
     return state
+
+
+def strip_ansi(text: str) -> str:
+    import re
+    return re.sub(r"\x1b\[[0-9;]*m", "", text)
+
+
+def parse_status(status_text: str, index: dict) -> list[dict]:
+    staged_paths = set(index.keys())
+    changes = {}
+    for path, entry in index.items():
+        changes[path] = {
+            "path": path,
+            "staged": True,
+            "status": "deleted" if entry.get("deleted") else "staged",
+            "label": "Staged deletion" if entry.get("deleted") else "Staged",
+        }
+    for raw_line in strip_ansi(status_text).splitlines():
+        line = raw_line.strip()
+        for label, status in (("Conflict:", "conflict"), ("Added:", "added"), ("Modified:", "modified"), ("Deleted:", "deleted"), ("Staged:", "staged")):
+            if label in line:
+                path = line.split(label, 1)[1].strip()
+                if not path:
+                    continue
+                current = changes.setdefault(path, {"path": path})
+                if status == "staged":
+                    current["staged"] = True
+                else:
+                    current.setdefault("staged", path in staged_paths)
+                    current["status"] = status
+                    current["label"] = status.title()
+                break
+    return sorted(changes.values(), key=lambda item: (not item.get("staged", False), item["path"]))
+
+
+def action_to_args(action: str, data: dict) -> list[str]:
+    path = str(data.get("path", "")).strip()
+    commit_id = str(data.get("commit", "")).strip()
+    branch = str(data.get("branch", "")).strip()
+    name = str(data.get("name", "")).strip()
+    remote = str(data.get("remote", "")).strip()
+
+    actions = {
+        "initialize": ["init"],
+        "stage_all": ["add", "."],
+        "stage_file": ["add", path],
+        "unstage_file": ["reset", path],
+        "commit": ["save", str(data.get("message", "")).strip()],
+        "create_branch": ["branch", name, commit_id],
+        "switch_branch": ["checkout", branch],
+        "merge_branch": ["merge", branch],
+        "merge_continue": ["merge", "--continue"],
+        "merge_abort": ["merge", "--abort"],
+        "restore_commit": ["restore", commit_id],
+        "revert_commit": ["revert", commit_id],
+        "soft_reset": ["reset", "--soft", commit_id],
+        "hard_reset": ["reset", "--hard", commit_id],
+        "create_tag": ["tag", name, commit_id],
+        "ignore_path": ["ignore", path],
+        "add_remote": ["remote", "add", remote, str(data.get("remote_path", "")).strip()],
+        "fetch_remote": ["fetch", remote],
+        "pull_remote": ["pull", remote, branch or "main"],
+        "push_remote": ["push", remote, branch or "main"],
+        "clone_repo": ["clone", str(data.get("source", "")).strip(), str(data.get("dest", "")).strip()],
+        "check_integrity": ["fsck"],
+    }
+    if action not in actions:
+        raise ValueError(f"Unsupported action: {action}")
+    return [arg for arg in actions[action] if arg != ""]
 
 
 class LeafWebHandler(BaseHTTPRequestHandler):
@@ -221,15 +265,15 @@ class LeafWebHandler(BaseHTTPRequestHandler):
             repo = resolve_repo(data.get("repo"), self.default_repo)
             repo.mkdir(parents=True, exist_ok=True)
 
-            if parsed.path == "/api/run":
-                command = str(data.get("command", "")).strip()
-                args = [str(arg) for arg in data.get("args", []) if str(arg) != ""]
-                if command not in SAFE_COMMANDS:
-                    raise ValueError(f"Unsupported command: {command}")
-                result = run_leaf(repo, [command, *args], timeout=60)
+            if parsed.path == "/api/action":
+                action = str(data.get("action", "")).strip()
+                args = action_to_args(action, data)
+                result = run_leaf(repo, args, timeout=60)
+                result["action"] = action
                 result["state"] = repo_state(repo)
                 self.send_json(result)
                 return
+
 
             if parsed.path == "/api/file":
                 target = safe_child(repo, str(data.get("path", "")))

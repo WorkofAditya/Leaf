@@ -4,10 +4,10 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT))
 
-from leaf_web import repo_state, run_leaf, safe_child
+from leaf_web import action_to_args, parse_status, repo_state, run_leaf, safe_child
 
 
-def test_leaf_web_runs_real_leaf_commands(tmp_path):
+def test_leaf_web_runs_real_leaf_workflow_operations(tmp_path):
     init = run_leaf(tmp_path, ["init"])
     assert init["ok"]
     assert "Initialized" in init["stdout"]
@@ -36,3 +36,18 @@ def test_safe_child_blocks_leaf_metadata_and_path_escape(tmp_path):
             pass
         else:
             raise AssertionError(f"{value} should be blocked")
+
+
+def test_workflow_actions_map_to_leaf_operations():
+    assert action_to_args("stage_file", {"path": "README.md"}) == ["add", "README.md"]
+    assert action_to_args("commit", {"message": "polish docs"}) == ["save", "polish docs"]
+    assert action_to_args("switch_branch", {"branch": "feature"}) == ["checkout", "feature"]
+    assert action_to_args("merge_branch", {"branch": "feature"}) == ["merge", "feature"]
+
+
+def test_parse_status_returns_structured_changes():
+    status = "🌱 Staged: README.md\n🍃 Modified: app.py\n🍂 Deleted: old.txt\n"
+    changes = parse_status(status, {"README.md": {"deleted": False, "content": []}})
+    assert {change["path"] for change in changes} == {"README.md", "app.py", "old.txt"}
+    assert next(change for change in changes if change["path"] == "README.md")["staged"] is True
+    assert next(change for change in changes if change["path"] == "app.py")["status"] == "modified"

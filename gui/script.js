@@ -1,39 +1,21 @@
-const state = { repo: '', data: null, selectedFile: '' };
-
+const app = { repo: '', data: null, selectedChange: '', selectedCommit: null };
 const $ = (selector) => document.querySelector(selector);
 const $$ = (selector) => [...document.querySelectorAll(selector)];
 
 const els = {
-  repoPath: $('#repoPath'),
-  loadRepo: $('#loadRepo'),
-  repoHint: $('#repoHint'),
-  repoState: $('#repoState'),
-  repoLocation: $('#repoLocation'),
-  currentBranch: $('#currentBranch'),
-  headCommit: $('#headCommit'),
-  fileCount: $('#fileCount'),
-  stagedCount: $('#stagedCount'),
-  integrityState: $('#integrityState'),
-  mergeState: $('#mergeState'),
-  lastCommand: $('#lastCommand'),
-  commandOutput: $('#commandOutput'),
-  statusOutput: $('#statusOutput'),
-  diffOutput: $('#diffOutput'),
-  fileList: $('#fileList'),
-  fileSearch: $('#fileSearch'),
-  editorTitle: $('#editorTitle'),
-  editorPath: $('#editorPath'),
-  fileEditor: $('#fileEditor'),
-  saveFile: $('#saveFile'),
-  deleteFile: $('#deleteFile'),
-  newFile: $('#newFile'),
-  commitTimeline: $('#commitTimeline'),
-  refList: $('#refList'),
-  remoteList: $('#remoteList'),
-  metadataOutput: $('#metadataOutput'),
-  commandSearch: $('#commandSearch'),
-  commandGrid: $('#commandGrid'),
-  toast: $('#toast'),
+  repoPath: $('#repoPath'), loadRepo: $('#loadRepo'), initializeRepo: $('#initializeRepo'), connectionLabel: $('#connectionLabel'),
+  sidebarBranch: $('#sidebarBranch'), repoTitle: $('#repoTitle'), repoSubtitle: $('#repoSubtitle'), currentBranch: $('#currentBranch'),
+  headCommit: $('#headCommit'), changedCount: $('#changedCount'), stagedSummary: $('#stagedSummary'), commitCount: $('#commitCount'),
+  latestCommit: $('#latestCommit'), repoHealth: $('#repoHealth'), mergeState: $('#mergeState'), refreshState: $('#refreshState'),
+  stageAll: $('#stageAll'), unstageAll: $('#unstageAll'), stagedList: $('#stagedList'), unstagedList: $('#unstagedList'),
+  commitForm: $('#commitForm'), commitMessage: $('#commitMessage'), diffTitle: $('#diffTitle'), selectedChangeStatus: $('#selectedChangeStatus'),
+  diffOutput: $('#diffOutput'), commitTimeline: $('#commitTimeline'), commitDetailTitle: $('#commitDetailTitle'), commitDetails: $('#commitDetails'),
+  branchSelector: $('#branchSelector'), branchStartPoint: $('#branchStartPoint'), branchList: $('#branchList'), newBranchName: $('#newBranchName'),
+  createBranch: $('#createBranch'), mergeCandidates: $('#mergeCandidates'), mergeControls: $('#mergeControls'), continueMerge: $('#continueMerge'),
+  abortMerge: $('#abortMerge'), fileSearch: $('#fileSearch'), fileList: $('#fileList'), newFile: $('#newFile'), editorTitle: $('#editorTitle'),
+  editorPath: $('#editorPath'), fileEditor: $('#fileEditor'), saveFile: $('#saveFile'), deleteFile: $('#deleteFile'), remoteList: $('#remoteList'),
+  remoteName: $('#remoteName'), remotePath: $('#remotePath'), addRemote: $('#addRemote'), fetchRemote: $('#fetchRemote'), pullRemote: $('#pullRemote'),
+  pushRemote: $('#pushRemote'), checkIntegrity: $('#checkIntegrity'), activityLog: $('#activityLog'), toast: $('#toast'),
 };
 
 function showToast(message) {
@@ -50,251 +32,233 @@ function apiUrl(path, params = {}) {
   return url;
 }
 
-async function apiGet(path, params = {}) {
-  const response = await fetch(apiUrl(path, params));
+async function request(path, options = {}) {
+  const response = await fetch(path, options);
   const data = await response.json();
-  if (!response.ok || data.ok === false) throw new Error(data.error || 'Request failed');
+  if (!response.ok || data.ok === false) throw new Error(data.error || data.stderr || 'Action failed');
   return data;
 }
 
-async function apiPost(path, body = {}) {
-  const response = await fetch(path, {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify(body),
-  });
-  const data = await response.json();
-  if (!response.ok || data.ok === false) throw new Error(data.error || 'Request failed');
-  return data;
+async function loadState(repo = app.repo) {
+  const data = await request(apiUrl('/api/state', { repo }));
+  app.repo = data.repo;
+  app.data = data;
+  els.repoPath.value = data.repo;
+  render();
 }
 
-function shellSplit(input) {
-  const args = [];
-  let current = '';
-  let quote = '';
-  let escape = false;
-
-  for (const char of input.trim()) {
-    if (escape) {
-      current += char;
-      escape = false;
-    } else if (char === '\\') {
-      escape = true;
-    } else if (quote) {
-      if (char === quote) quote = '';
-      else current += char;
-    } else if (char === '"' || char === "'") {
-      quote = char;
-    } else if (/\s/.test(char)) {
-      if (current) {
-        args.push(current);
-        current = '';
-      }
-    } else {
-      current += char;
-    }
-  }
-  if (current) args.push(current);
-  return args;
-}
-
-function setOutput(result) {
-  els.lastCommand.textContent = result.command || 'leaf';
-  els.commandOutput.textContent = [result.stdout, result.stderr].filter(Boolean).join('\n') || '(no output)';
-}
-
-async function loadState(repo = state.repo) {
+async function act(action, payload = {}, success = 'Done') {
   try {
-    const data = await apiGet('/api/state', { repo });
-    state.repo = data.repo;
-    state.data = data;
-    els.repoPath.value = data.repo;
-    renderState();
-    return data;
-  } catch (error) {
-    showToast(error.message);
-    throw error;
-  }
-}
-
-async function runLeaf(command, args = []) {
-  try {
-    const result = await apiPost('/api/run', { repo: state.repo || els.repoPath.value, command, args });
-    setOutput(result);
-    state.data = result.state;
-    state.repo = result.state.repo;
-    renderState();
-    showToast(result.ok ? `Ran ${result.command}` : `Leaf returned ${result.returncode}`);
+    const result = await request('/api/action', {
+      method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ repo: app.repo || els.repoPath.value, action, ...payload }),
+    });
+    app.data = result.state;
+    app.repo = result.state.repo;
+    els.activityLog.textContent = cleanOutput(result.stdout || result.stderr || success);
+    render();
+    showToast(success);
     return result;
   } catch (error) {
+    els.activityLog.textContent = error.message;
     showToast(error.message);
-    els.commandOutput.textContent = error.message;
     throw error;
   }
 }
 
-function renderState() {
-  const data = state.data;
+function cleanOutput(text) {
+  return text.replace(/\x1b\[[0-9;]*m/g, '').trim() || 'Ready.';
+}
+
+function render() {
+  const data = app.data;
   if (!data) return;
-  const log = data.log || [];
-  const branches = data.branches || {};
-  const tags = data.tags || {};
-  const remotes = data.remotes || {};
-  const index = data.index || {};
-  const merge = data.merge_state || {};
+  const commits = data.log || [];
+  const changes = data.changes || [];
+  const staged = changes.filter((change) => change.staged);
+  const mergeActive = Object.keys(data.merge_state || {}).length > 0;
+  const branch = data.current_branch || 'Detached';
 
-  els.repoHint.textContent = data.is_repo ? 'Connected to a Leaf repository.' : 'Not initialized yet. Run leaf init.';
-  els.repoState.textContent = data.is_repo ? 'Leaf repo' : 'Not initialized';
-  els.repoLocation.textContent = data.repo;
-  els.currentBranch.textContent = data.current_branch || 'Detached';
+  els.connectionLabel.textContent = data.is_repo ? 'Connected to a Leaf repository' : 'Folder is not tracked yet';
+  els.sidebarBranch.textContent = branch;
+  els.repoTitle.textContent = data.is_repo ? shortPath(data.repo) : 'Start tracking this folder';
+  els.repoSubtitle.textContent = data.repo;
+  els.currentBranch.textContent = branch;
   els.headCommit.textContent = data.head ? `HEAD ${data.head}` : 'No commits yet';
-  els.fileCount.textContent = String((data.files || []).length);
-  els.stagedCount.textContent = `${Object.keys(index).length} staged path(s)`;
-  els.integrityState.textContent = data.is_repo ? 'Connected' : 'Setup needed';
-  els.mergeState.textContent = Object.keys(merge).length ? `Merge from ${merge.source_branch || 'branch'}` : 'No merge in progress';
-  els.statusOutput.textContent = data.status_text || 'No status output.';
-  els.diffOutput.textContent = data.diff_text || 'No differences found.';
+  els.changedCount.textContent = String(changes.length);
+  els.stagedSummary.textContent = `${staged.length} staged for commit`;
+  els.commitCount.textContent = String(commits.length);
+  els.latestCommit.textContent = commits.at(-1)?.message || 'No timeline yet';
+  els.repoHealth.textContent = data.is_repo ? 'Connected' : 'Setup needed';
+  els.mergeState.textContent = mergeActive ? `Merge from ${data.merge_state.source_branch || 'another branch'}` : 'No merge in progress';
+  els.initializeRepo.classList.toggle('hidden', data.is_repo);
+  els.commitForm.classList.toggle('hidden', staged.length === 0);
+  els.mergeControls.classList.toggle('hidden', !mergeActive);
 
+  renderChanges(changes);
+  renderDiff();
+  renderHistory(commits, data.tags || {});
+  renderBranches(data.branches || {});
   renderFiles();
-  renderHistory(log, tags);
-  renderRefs(branches, tags);
-  renderRemotes(remotes);
-  renderSelects(branches);
+  renderRemotes(data.remotes || {});
+}
 
-  els.metadataOutput.textContent = JSON.stringify(
-    { head: data.head, current_branch: data.current_branch, branches, tags, remotes, index, merge_state: merge },
-    null,
-    2,
-  );
+function renderChanges(changes) {
+  const staged = changes.filter((change) => change.staged);
+  const unstaged = changes.filter((change) => !change.staged);
+  els.stagedList.innerHTML = staged.length ? staged.map(changeRow).join('') : '<p class="empty-state muted">No staged changes.</p>';
+  els.unstagedList.innerHTML = unstaged.length ? unstaged.map(changeRow).join('') : '<p class="empty-state muted">No unstaged changes.</p>';
+}
+
+function changeRow(change) {
+  const action = change.staged ? 'Unstage' : 'Stage';
+  return `<article class="change-row ${app.selectedChange === change.path ? 'selected' : ''}" data-path="${escapeHtml(change.path)}">
+    <button class="change-main" data-select-change="${escapeHtml(change.path)}"><strong>${escapeHtml(change.path)}</strong><span>${escapeHtml(change.label || change.status || 'Changed')}</span></button>
+    <button class="button compact" data-toggle-stage="${escapeHtml(change.path)}" data-staged="${change.staged ? 'true' : 'false'}">${action}</button>
+  </article>`;
+}
+
+function renderDiff() {
+  const diff = app.data?.diff_text || '';
+  const change = (app.data?.changes || []).find((item) => item.path === app.selectedChange) || (app.data?.changes || [])[0];
+  if (change && !app.selectedChange) app.selectedChange = change.path;
+  els.diffTitle.textContent = change ? change.path : 'No changed file selected';
+  els.selectedChangeStatus.textContent = change ? change.label || change.status : 'Clean';
+  els.diffOutput.innerHTML = diff ? colorDiff(extractFileDiff(diff, app.selectedChange || change?.path)) : 'No differences found.';
+}
+
+function extractFileDiff(diff, path) {
+  if (!path) return diff;
+  const marker = `Diff: ${path}`;
+  const start = diff.indexOf(marker);
+  if (start === -1) return diff;
+  const rest = diff.slice(start);
+  const next = rest.indexOf('\n🌿 Diff:', 1);
+  return next === -1 ? rest : rest.slice(0, next);
+}
+
+function colorDiff(diff) {
+  return escapeHtml(cleanOutput(diff)).split('\n').map((line) => {
+    const cls = line.startsWith('+') && !line.startsWith('+++') ? 'added-line' : line.startsWith('-') && !line.startsWith('---') ? 'removed-line' : 'context-line';
+    return `<span class="${cls}">${line || ' '}</span>`;
+  }).join('\n');
+}
+
+function renderHistory(commits, tags) {
+  const tagsByCommit = Object.entries(tags).reduce((acc, [tag, commit]) => ({ ...acc, [commit]: [...(acc[commit] || []), tag] }), {});
+  els.commitTimeline.innerHTML = commits.length ? [...commits].reverse().map((commit) => {
+    const active = app.selectedCommit?.id === commit.id ? 'selected' : '';
+    return `<li class="${active}" data-commit="${escapeHtml(commit.id)}"><span></span><button><strong>${escapeHtml(commit.message || 'Commit')}</strong><small>${escapeHtml(commit.id)} · ${escapeHtml(commit.branch || 'detached')} · ${escapeHtml(commit.time || '')}</small></button></li>`;
+  }).join('') : '<li><span></span><button><strong>No commits yet</strong><small>Your first commit will appear here.</small></button></li>';
+
+  if (!app.selectedCommit && commits.length) app.selectedCommit = commits.at(-1);
+  const commit = app.selectedCommit;
+  if (!commit) return;
+  const tagText = (tagsByCommit[commit.id] || []).join(', ') || 'No tags';
+  els.commitDetailTitle.textContent = commit.message || commit.id;
+  els.commitDetails.innerHTML = `<dl><dt>Commit</dt><dd>${escapeHtml(commit.id)}</dd><dt>Branch</dt><dd>${escapeHtml(commit.branch || 'detached')}</dd><dt>Created</dt><dd>${escapeHtml(commit.time || '')}</dd><dt>Parents</dt><dd>${escapeHtml((commit.parents || []).join(', ') || 'Root commit')}</dd><dt>Tags</dt><dd>${escapeHtml(tagText)}</dd><dt>Files</dt><dd>${escapeHtml([...(commit.files || []), ...Object.keys(commit.changes || {})].join(', ') || 'No file list recorded')}</dd></dl>`;
+}
+
+function renderBranches(branches) {
+  const current = app.data?.current_branch || '';
+  const names = Object.keys(branches);
+  els.branchSelector.innerHTML = names.map((name) => `<option value="${escapeHtml(name)}" ${name === current ? 'selected' : ''}>${escapeHtml(name)}</option>`).join('');
+  els.branchStartPoint.innerHTML = '<option value="">Start from current HEAD</option>' + (app.data?.log || []).map((commit) => `<option value="${escapeHtml(commit.id)}">${escapeHtml(commit.message || commit.id)} · ${escapeHtml(commit.id)}</option>`).join('');
+  els.branchList.innerHTML = names.map((name) => `<article class="branch-card ${name === current ? 'active' : ''}"><strong>${escapeHtml(name)}</strong><span>${escapeHtml(branches[name] || 'No commits')}</span></article>`).join('') || '<p class="muted">No branches yet.</p>';
+  els.mergeCandidates.innerHTML = names.filter((name) => name !== current).map((name) => `<button class="merge-card" data-merge="${escapeHtml(name)}"><strong>${escapeHtml(name)}</strong><span>Merge into ${escapeHtml(current || 'current branch')}</span></button>`).join('') || '<p class="muted">No merge candidates.</p>';
 }
 
 function renderFiles() {
   const query = els.fileSearch.value.toLowerCase();
-  const files = (state.data?.files || []).filter((file) => file.path.toLowerCase().includes(query));
-  els.fileList.innerHTML = files.length
-    ? files.map((file) => `<button class="file-row" data-path="${escapeHtml(file.path)}"><span>${escapeHtml(file.path)}</span><em>${file.size} bytes</em></button>`).join('')
-    : '<p class="muted empty-state">No files found.</p>';
-}
-
-function renderHistory(log, tags) {
-  const tagsByCommit = Object.entries(tags).reduce((acc, [tag, commit]) => {
-    acc[commit] = [...(acc[commit] || []), tag];
-    return acc;
-  }, {});
-  els.commitTimeline.innerHTML = log.length
-    ? [...log]
-        .reverse()
-        .map((commit) => {
-          const tagText = tagsByCommit[commit.id] ? ` · tags: ${tagsByCommit[commit.id].join(', ')}` : '';
-          const parents = (commit.parents || []).length > 1 ? ' · merge commit' : '';
-          return `<li><span></span><div><strong>${escapeHtml(commit.id)}</strong><p>${escapeHtml(commit.message || 'save')} · ${escapeHtml(commit.branch || 'detached')}${parents}${tagText}<br>${escapeHtml(commit.time || '')}</p></div></li>`;
-        })
-        .join('')
-    : '<li><span></span><div><strong>No commits yet</strong><p>Save your first change from the command center.</p></div></li>';
-}
-
-function renderRefs(branches, tags) {
-  const branchHtml = Object.entries(branches).map(([name, commit]) => `<span><b>branch</b>${escapeHtml(name)} <em>${escapeHtml(commit || 'empty')}</em></span>`);
-  const tagHtml = Object.entries(tags).map(([name, commit]) => `<span><b>tag</b>${escapeHtml(name)} <em>${escapeHtml(commit || '')}</em></span>`);
-  els.refList.innerHTML = [...branchHtml, ...tagHtml].join('') || '<p class="muted">No refs yet.</p>';
+  const files = (app.data?.files || []).filter((file) => file.path.toLowerCase().includes(query));
+  els.fileList.innerHTML = files.length ? files.map((file) => `<button class="file-row" data-path="${escapeHtml(file.path)}"><span>${escapeHtml(file.path)}</span><em>${file.size} bytes</em></button>`).join('') : '<p class="empty-state muted">No files found.</p>';
 }
 
 function renderRemotes(remotes) {
-  els.remoteList.innerHTML = Object.entries(remotes)
-    .map(([name, path]) => `<p><strong>${escapeHtml(name)}</strong><br><span>${escapeHtml(path)}</span></p>`)
-    .join('') || '<p class="muted">No remotes configured.</p>';
-}
-
-function renderSelects(branches) {
-  const options = Object.keys(branches).map((branch) => `<option value="${escapeHtml(branch)}">${escapeHtml(branch)}</option>`).join('');
-  $('#checkoutBranch').innerHTML = options;
-  $('#mergeBranch').innerHTML = options;
-}
-
-function escapeHtml(value) {
-  return String(value).replace(/[&<>"]/g, (char) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' })[char]);
+  els.remoteList.innerHTML = Object.entries(remotes).map(([name, path]) => `<p><strong>${escapeHtml(name)}</strong><br><span>${escapeHtml(path)}</span></p>`).join('') || '<p class="muted">No remotes configured.</p>';
 }
 
 async function openFile(path) {
-  const file = await apiGet('/api/file', { repo: state.repo, path });
-  state.selectedFile = file.path;
+  const file = await request(apiUrl('/api/file', { repo: app.repo, path }));
   els.editorPath.value = file.path;
   els.editorTitle.textContent = file.path;
   els.fileEditor.value = file.content;
 }
 
+function shortPath(path) {
+  const parts = String(path).split('/').filter(Boolean);
+  return parts.slice(-2).join('/') || path;
+}
+
+function escapeHtml(value) {
+  return String(value ?? '').replace(/[&<>"]/g, (char) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' })[char]);
+}
+
 els.loadRepo.addEventListener('click', () => loadState(els.repoPath.value));
+els.initializeRepo.addEventListener('click', () => act('initialize', {}, 'Workspace tracking started'));
+els.refreshState.addEventListener('click', () => loadState().then(() => showToast('Workspace refreshed')));
+els.stageAll.addEventListener('click', () => act('stage_all', {}, 'All changes staged'));
+els.unstageAll.addEventListener('click', async () => {
+  for (const change of (app.data?.changes || []).filter((item) => item.staged)) await act('unstage_file', { path: change.path }, `Unstaged ${change.path}`);
+});
+
+$('#changes').addEventListener('click', (event) => {
+  const select = event.target.closest('[data-select-change]');
+  const toggle = event.target.closest('[data-toggle-stage]');
+  if (select) { app.selectedChange = select.dataset.selectChange; render(); }
+  if (toggle) act(toggle.dataset.staged === 'true' ? 'unstage_file' : 'stage_file', { path: toggle.dataset.toggleStage }, toggle.dataset.staged === 'true' ? 'Change unstaged' : 'Change staged');
+});
+
+els.commitForm.addEventListener('submit', (event) => {
+  event.preventDefault();
+  const message = els.commitMessage.value.trim();
+  if (!message) return showToast('Write a commit message first');
+  act('commit', { message }, 'Commit created').then(() => { els.commitMessage.value = ''; app.selectedCommit = app.data?.log?.at(-1) || null; });
+});
+
+els.commitTimeline.addEventListener('click', (event) => {
+  const item = event.target.closest('[data-commit]');
+  if (!item) return;
+  app.selectedCommit = (app.data?.log || []).find((commit) => commit.id === item.dataset.commit);
+  render();
+});
+els.branchSelector.addEventListener('change', () => act('switch_branch', { branch: els.branchSelector.value }, `Switched to ${els.branchSelector.value}`));
+els.createBranch.addEventListener('click', () => {
+  if (!els.newBranchName.value.trim()) return showToast('Name the new branch first');
+  act('create_branch', { name: els.newBranchName.value.trim(), commit: els.branchStartPoint.value }, 'Branch created').then(() => { els.newBranchName.value = ''; });
+});
+els.mergeCandidates.addEventListener('click', (event) => {
+  const card = event.target.closest('[data-merge]');
+  if (card) act('merge_branch', { branch: card.dataset.merge }, `Merged ${card.dataset.merge}`);
+});
+els.continueMerge.addEventListener('click', () => act('merge_continue', {}, 'Merge completed'));
+els.abortMerge.addEventListener('click', () => act('merge_abort', {}, 'Merge aborted'));
+
 els.fileSearch.addEventListener('input', renderFiles);
-els.fileList.addEventListener('click', (event) => {
-  const row = event.target.closest('[data-path]');
-  if (row) openFile(row.dataset.path);
-});
-els.newFile.addEventListener('click', () => {
-  state.selectedFile = '';
-  els.editorPath.value = 'new-file.txt';
-  els.editorTitle.textContent = 'New file';
-  els.fileEditor.value = '';
-});
+els.fileList.addEventListener('click', (event) => { const row = event.target.closest('[data-path]'); if (row) openFile(row.dataset.path); });
+els.newFile.addEventListener('click', () => { els.editorTitle.textContent = 'New file'; els.editorPath.value = 'new-file.txt'; els.fileEditor.value = ''; });
 els.saveFile.addEventListener('click', async () => {
-  const result = await apiPost('/api/file', { repo: state.repo, path: els.editorPath.value, content: els.fileEditor.value });
-  state.data = result.state;
-  renderState();
-  showToast(`Saved ${els.editorPath.value}`);
+  const result = await request('/api/file', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ repo: app.repo, path: els.editorPath.value, content: els.fileEditor.value }) });
+  app.data = result.state; render(); showToast('File saved');
 });
 els.deleteFile.addEventListener('click', async () => {
   const path = els.editorPath.value;
   if (!path || !window.confirm(`Delete ${path}?`)) return;
-  const response = await fetch(apiUrl('/api/file', { repo: state.repo, path }), { method: 'DELETE' });
-  const result = await response.json();
-  if (!response.ok || result.ok === false) throw new Error(result.error || 'Delete failed');
-  state.data = result.state;
-  els.fileEditor.value = '';
-  renderState();
-  showToast(`Deleted ${path}`);
+  const result = await request(apiUrl('/api/file', { repo: app.repo, path }), { method: 'DELETE' });
+  app.data = result.state; els.fileEditor.value = ''; render(); showToast('File deleted');
 });
 
-$$('[data-run]').forEach((button) => {
-  button.addEventListener('click', () => runLeaf(button.dataset.run, JSON.parse(button.dataset.args || '[]')));
-});
+els.addRemote.addEventListener('click', () => act('add_remote', { remote: els.remoteName.value, remote_path: els.remotePath.value }, 'Remote added'));
+els.fetchRemote.addEventListener('click', () => act('fetch_remote', { remote: els.remoteName.value }, 'Fetched remote changes'));
+els.pullRemote.addEventListener('click', () => act('pull_remote', { remote: els.remoteName.value, branch: app.data?.current_branch || 'main' }, 'Pulled remote branch'));
+els.pushRemote.addEventListener('click', () => act('push_remote', { remote: els.remoteName.value, branch: app.data?.current_branch || 'main' }, 'Pushed current branch'));
+els.checkIntegrity.addEventListener('click', () => act('check_integrity', {}, 'Repository checked'));
 
-$('#customCommand').addEventListener('submit', (event) => {
-  event.preventDefault();
-  runLeaf($('#commandName').value, shellSplit($('#commandArgs').value));
-});
+const navLinks = $$('.studio-nav a');
+const observer = new IntersectionObserver((entries) => {
+  const visible = entries.filter((entry) => entry.isIntersecting).sort((a, b) => b.intersectionRatio - a.intersectionRatio)[0];
+  if (!visible) return;
+  navLinks.forEach((link) => link.classList.toggle('active', link.getAttribute('href') === `#${visible.target.id}`));
+}, { rootMargin: '-25% 0px -60% 0px', threshold: [0.15, 0.3, 0.6] });
+navLinks.map((link) => document.querySelector(link.getAttribute('href'))).filter(Boolean).forEach((section) => observer.observe(section));
 
-$('#createBranch').addEventListener('click', () => runLeaf('branch', [$('#branchName').value, $('#branchCommit').value].filter(Boolean)));
-$('#checkoutSelected').addEventListener('click', () => runLeaf('checkout', [$('#checkoutBranch').value]));
-$('#mergeSelected').addEventListener('click', () => runLeaf('merge', [$('#mergeBranch').value]));
-$('#restoreCommit').addEventListener('click', () => runLeaf('restore', [$('#targetCommit').value]));
-$('#softReset').addEventListener('click', () => runLeaf('reset', ['--soft', $('#targetCommit').value]));
-$('#hardReset').addEventListener('click', () => runLeaf('reset', ['--hard', $('#targetCommit').value]));
-$('#revertCommit').addEventListener('click', () => runLeaf('revert', [$('#targetCommit').value]));
-$('#createTag').addEventListener('click', () => runLeaf('tag', [$('#tagName').value, $('#tagCommit').value].filter(Boolean)));
-$('#ignoreButton').addEventListener('click', () => runLeaf('ignore', [$('#ignorePath').value]));
-$('#addRemote').addEventListener('click', () => runLeaf('remote', ['add', $('#remoteName').value, $('#remotePath').value]));
-$('#fetchRemote').addEventListener('click', () => runLeaf('fetch', [$('#remoteName').value]));
-$('#pullRemote').addEventListener('click', () => runLeaf('pull', [$('#remoteName').value, 'main']));
-$('#pushRemote').addEventListener('click', () => runLeaf('push', [$('#remoteName').value, 'main']));
-$('#cloneRepo').addEventListener('click', () => runLeaf('clone', [$('#cloneSource').value, $('#cloneDest').value].filter(Boolean)));
-
-els.commandSearch.addEventListener('input', (event) => {
-  const query = event.target.value.trim().toLowerCase();
-  $$('#commandGrid article').forEach((card) => {
-    const text = `${card.textContent} ${card.dataset.keywords}`.toLowerCase();
-    card.classList.toggle('hidden', query && !text.includes(query));
-  });
-});
-
-const navLinks = $$('.nav-list a');
-const sections = navLinks.map((link) => document.querySelector(link.getAttribute('href'))).filter(Boolean);
-const observer = new IntersectionObserver(
-  (entries) => {
-    const visible = entries.filter((entry) => entry.isIntersecting).sort((a, b) => b.intersectionRatio - a.intersectionRatio)[0];
-    if (!visible) return;
-    navLinks.forEach((link) => link.classList.toggle('active', link.getAttribute('href') === `#${visible.target.id}`));
-  },
-  { rootMargin: '-25% 0px -60% 0px', threshold: [0.15, 0.3, 0.6] },
-);
-sections.forEach((section) => observer.observe(section));
-
-loadState(new URLSearchParams(window.location.search).get('repo') || '').then(() => runLeaf('status')).catch(() => {});
+loadState(new URLSearchParams(window.location.search).get('repo') || '').catch((error) => showToast(error.message));
