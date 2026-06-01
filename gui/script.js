@@ -1,21 +1,21 @@
-const app = { repo: '', data: null, selectedChange: '', selectedCommit: null };
+const app = { repo: '', data: null, selectedChange: '', selectedCommit: null, page: 'code' };
 const $ = (selector) => document.querySelector(selector);
 const $$ = (selector) => [...document.querySelectorAll(selector)];
 
 const els = {
   repoPath: $('#repoPath'), loadRepo: $('#loadRepo'), initializeRepo: $('#initializeRepo'), connectionLabel: $('#connectionLabel'),
-  sidebarBranch: $('#sidebarBranch'), repoTitle: $('#repoTitle'), repoSubtitle: $('#repoSubtitle'), currentBranch: $('#currentBranch'),
-  headCommit: $('#headCommit'), changedCount: $('#changedCount'), stagedSummary: $('#stagedSummary'), commitCount: $('#commitCount'),
-  latestCommit: $('#latestCommit'), repoHealth: $('#repoHealth'), mergeState: $('#mergeState'), refreshState: $('#refreshState'),
-  stageAll: $('#stageAll'), unstageAll: $('#unstageAll'), stagedList: $('#stagedList'), unstagedList: $('#unstagedList'),
-  commitForm: $('#commitForm'), commitMessage: $('#commitMessage'), diffTitle: $('#diffTitle'), selectedChangeStatus: $('#selectedChangeStatus'),
-  diffOutput: $('#diffOutput'), commitTimeline: $('#commitTimeline'), commitDetailTitle: $('#commitDetailTitle'), commitDetails: $('#commitDetails'),
-  branchSelector: $('#branchSelector'), branchStartPoint: $('#branchStartPoint'), branchList: $('#branchList'), newBranchName: $('#newBranchName'),
-  createBranch: $('#createBranch'), mergeCandidates: $('#mergeCandidates'), mergeControls: $('#mergeControls'), continueMerge: $('#continueMerge'),
-  abortMerge: $('#abortMerge'), fileSearch: $('#fileSearch'), fileList: $('#fileList'), newFile: $('#newFile'), editorTitle: $('#editorTitle'),
-  editorPath: $('#editorPath'), fileEditor: $('#fileEditor'), saveFile: $('#saveFile'), deleteFile: $('#deleteFile'), remoteList: $('#remoteList'),
+  repoTitle: $('#repoTitle'), repoSubtitle: $('#repoSubtitle'), currentBranch: $('#currentBranch'), headCommit: $('#headCommit'),
+  changedCount: $('#changedCount'), stagedSummary: $('#stagedSummary'), commitCount: $('#commitCount'), latestCommit: $('#latestCommit'),
+  repoHealth: $('#repoHealth'), mergeState: $('#mergeState'), branchSelector: $('#branchSelector'), refreshState: $('#refreshState'),
+  fileSearch: $('#fileSearch'), fileList: $('#fileList'), newFile: $('#newFile'), editorTitle: $('#editorTitle'), editorPath: $('#editorPath'),
+  fileEditor: $('#fileEditor'), saveFile: $('#saveFile'), deleteFile: $('#deleteFile'), stageAll: $('#stageAll'), stagedList: $('#stagedList'),
+  unstagedList: $('#unstagedList'), commitForm: $('#commitForm'), commitMessage: $('#commitMessage'), commitTimeline: $('#commitTimeline'),
+  commitDetailTitle: $('#commitDetailTitle'), commitDetails: $('#commitDetails'), commitDiffOutput: $('#commitDiffOutput'), branchList: $('#branchList'),
+  newBranchName: $('#newBranchName'), branchStartPoint: $('#branchStartPoint'), createBranch: $('#createBranch'), branchMergeCandidates: $('#branchMergeCandidates'),
+  mergeBaseBranch: $('#mergeBaseBranch'), mergeCompareBranch: $('#mergeCompareBranch'), mergeSelected: $('#mergeSelected'), mergeControls: $('#mergeControls'),
+  continueMerge: $('#continueMerge'), abortMerge: $('#abortMerge'), mergeReview: $('#mergeReview'), mergeDiffOutput: $('#mergeDiffOutput'), remoteList: $('#remoteList'),
   remoteName: $('#remoteName'), remotePath: $('#remotePath'), addRemote: $('#addRemote'), fetchRemote: $('#fetchRemote'), pullRemote: $('#pullRemote'),
-  pushRemote: $('#pushRemote'), checkIntegrity: $('#checkIntegrity'), activityLog: $('#activityLog'), toast: $('#toast'),
+  pushRemote: $('#pushRemote'), ignorePath: $('#ignorePath'), ignoreButton: $('#ignoreButton'), checkIntegrity: $('#checkIntegrity'), activityLog: $('#activityLog'), toast: $('#toast'),
 };
 
 function showToast(message) {
@@ -26,9 +26,7 @@ function showToast(message) {
 
 function apiUrl(path, params = {}) {
   const url = new URL(path, window.location.origin);
-  Object.entries(params).forEach(([key, value]) => {
-    if (value !== undefined && value !== null && value !== '') url.searchParams.set(key, value);
-  });
+  Object.entries(params).forEach(([key, value]) => value ? url.searchParams.set(key, value) : null);
   return url;
 }
 
@@ -52,21 +50,21 @@ async function act(action, payload = {}, success = 'Done') {
     const result = await request('/api/action', {
       method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ repo: app.repo || els.repoPath.value, action, ...payload }),
     });
-    app.data = result.state;
     app.repo = result.state.repo;
-    els.activityLog.textContent = cleanOutput(result.stdout || result.stderr || success);
+    app.data = result.state;
+    if (els.activityLog) els.activityLog.textContent = cleanOutput(result.stdout || result.stderr || success);
     render();
     showToast(success);
     return result;
   } catch (error) {
-    els.activityLog.textContent = error.message;
+    if (els.activityLog) els.activityLog.textContent = error.message;
     showToast(error.message);
     throw error;
   }
 }
 
 function cleanOutput(text) {
-  return text.replace(/\x1b\[[0-9;]*m/g, '').trim() || 'Ready.';
+  return String(text || '').replace(/\x1b\[[0-9;]*m/g, '').trim() || 'Ready.';
 }
 
 function render() {
@@ -78,103 +76,93 @@ function render() {
   const mergeActive = Object.keys(data.merge_state || {}).length > 0;
   const branch = data.current_branch || 'Detached';
 
-  els.connectionLabel.textContent = data.is_repo ? 'Connected to a Leaf repository' : 'Folder is not tracked yet';
-  els.sidebarBranch.textContent = branch;
+  els.connectionLabel.textContent = data.is_repo ? `${branch} · ${changes.length} changed` : 'Folder is not tracked yet';
   els.repoTitle.textContent = data.is_repo ? shortPath(data.repo) : 'Start tracking this folder';
   els.repoSubtitle.textContent = data.repo;
   els.currentBranch.textContent = branch;
   els.headCommit.textContent = data.head ? `HEAD ${data.head}` : 'No commits yet';
   els.changedCount.textContent = String(changes.length);
-  els.stagedSummary.textContent = `${staged.length} staged for commit`;
+  els.stagedSummary.textContent = `${staged.length} staged`;
   els.commitCount.textContent = String(commits.length);
-  els.latestCommit.textContent = commits.at(-1)?.message || 'No timeline yet';
+  els.latestCommit.textContent = commits.at(-1)?.message || 'No history yet';
   els.repoHealth.textContent = data.is_repo ? 'Connected' : 'Setup needed';
-  els.mergeState.textContent = mergeActive ? `Merge from ${data.merge_state.source_branch || 'another branch'}` : 'No merge in progress';
+  els.mergeState.textContent = mergeActive ? `Merge from ${data.merge_state.source_branch || 'branch'}` : 'No merge in progress';
   els.initializeRepo.classList.toggle('hidden', data.is_repo);
   els.commitForm.classList.toggle('hidden', staged.length === 0);
   els.mergeControls.classList.toggle('hidden', !mergeActive);
 
+  renderPages();
+  renderFiles();
   renderChanges(changes);
-  renderDiff();
   renderHistory(commits, data.tags || {});
   renderBranches(data.branches || {});
-  renderFiles();
+  renderMergeRequest(changes);
   renderRemotes(data.remotes || {});
+}
+
+function renderPages() {
+  $$('.repo-page').forEach((page) => page.classList.toggle('active', page.dataset.page === app.page));
+  $$('[data-page-link]').forEach((link) => link.classList.toggle('active', link.dataset.pageLink === app.page));
+}
+
+function renderFiles() {
+  const query = els.fileSearch.value.toLowerCase();
+  const changed = new Map((app.data?.changes || []).map((change) => [change.path, change]));
+  const files = (app.data?.files || []).filter((file) => file.path.toLowerCase().includes(query));
+  els.fileList.innerHTML = files.length ? files.map((file) => {
+    const change = changed.get(file.path);
+    const badge = change ? `<em>${escapeHtml(change.label || change.status)}</em>` : '<em>clean</em>';
+    return `<button class="file-row" data-path="${escapeHtml(file.path)}"><span>${escapeHtml(file.path)}</span>${badge}</button>`;
+  }).join('') : '<p class="empty-state muted">No files found.</p>';
 }
 
 function renderChanges(changes) {
   const staged = changes.filter((change) => change.staged);
   const unstaged = changes.filter((change) => !change.staged);
-  els.stagedList.innerHTML = staged.length ? staged.map(changeRow).join('') : '<p class="empty-state muted">No staged changes.</p>';
+  els.stagedList.innerHTML = staged.length ? staged.map(changeRow).join('') : '<p class="empty-state muted">Nothing staged.</p>';
   els.unstagedList.innerHTML = unstaged.length ? unstaged.map(changeRow).join('') : '<p class="empty-state muted">No unstaged changes.</p>';
 }
 
 function changeRow(change) {
   const action = change.staged ? 'Unstage' : 'Stage';
-  return `<article class="change-row ${app.selectedChange === change.path ? 'selected' : ''}" data-path="${escapeHtml(change.path)}">
+  return `<article class="change-row ${app.selectedChange === change.path ? 'selected' : ''}">
     <button class="change-main" data-select-change="${escapeHtml(change.path)}"><strong>${escapeHtml(change.path)}</strong><span>${escapeHtml(change.label || change.status || 'Changed')}</span></button>
     <button class="button compact" data-toggle-stage="${escapeHtml(change.path)}" data-staged="${change.staged ? 'true' : 'false'}">${action}</button>
   </article>`;
 }
 
-function renderDiff() {
-  const diff = app.data?.diff_text || '';
-  const change = (app.data?.changes || []).find((item) => item.path === app.selectedChange) || (app.data?.changes || [])[0];
-  if (change && !app.selectedChange) app.selectedChange = change.path;
-  els.diffTitle.textContent = change ? change.path : 'No changed file selected';
-  els.selectedChangeStatus.textContent = change ? change.label || change.status : 'Clean';
-  els.diffOutput.innerHTML = diff ? colorDiff(extractFileDiff(diff, app.selectedChange || change?.path)) : 'No differences found.';
-}
-
-function extractFileDiff(diff, path) {
-  if (!path) return diff;
-  const marker = `Diff: ${path}`;
-  const start = diff.indexOf(marker);
-  if (start === -1) return diff;
-  const rest = diff.slice(start);
-  const next = rest.indexOf('\n🌿 Diff:', 1);
-  return next === -1 ? rest : rest.slice(0, next);
-}
-
-function colorDiff(diff) {
-  return escapeHtml(cleanOutput(diff)).split('\n').map((line) => {
-    const cls = line.startsWith('+') && !line.startsWith('+++') ? 'added-line' : line.startsWith('-') && !line.startsWith('---') ? 'removed-line' : 'context-line';
-    return `<span class="${cls}">${line || ' '}</span>`;
-  }).join('\n');
-}
-
 function renderHistory(commits, tags) {
   const tagsByCommit = Object.entries(tags).reduce((acc, [tag, commit]) => ({ ...acc, [commit]: [...(acc[commit] || []), tag] }), {});
-  els.commitTimeline.innerHTML = commits.length ? [...commits].reverse().map((commit) => {
-    const active = app.selectedCommit?.id === commit.id ? 'selected' : '';
-    return `<li class="${active}" data-commit="${escapeHtml(commit.id)}"><span></span><button><strong>${escapeHtml(commit.message || 'Commit')}</strong><small>${escapeHtml(commit.id)} · ${escapeHtml(commit.branch || 'detached')} · ${escapeHtml(commit.time || '')}</small></button></li>`;
-  }).join('') : '<li><span></span><button><strong>No commits yet</strong><small>Your first commit will appear here.</small></button></li>';
-
   if (!app.selectedCommit && commits.length) app.selectedCommit = commits.at(-1);
+  els.commitTimeline.innerHTML = commits.length ? [...commits].reverse().map((commit) => `<li class="${app.selectedCommit?.id === commit.id ? 'selected' : ''}" data-commit="${escapeHtml(commit.id)}"><span></span><button><strong>${escapeHtml(commit.message || 'Commit')}</strong><small>${escapeHtml(commit.id)} · ${escapeHtml(commit.branch || 'detached')} · ${escapeHtml(commit.time || '')}</small></button></li>`).join('') : '<li><span></span><button><strong>No commits yet</strong><small>Commit history will appear here.</small></button></li>';
+
   const commit = app.selectedCommit;
   if (!commit) return;
   const tagText = (tagsByCommit[commit.id] || []).join(', ') || 'No tags';
   els.commitDetailTitle.textContent = commit.message || commit.id;
   els.commitDetails.innerHTML = `<dl><dt>Commit</dt><dd>${escapeHtml(commit.id)}</dd><dt>Branch</dt><dd>${escapeHtml(commit.branch || 'detached')}</dd><dt>Created</dt><dd>${escapeHtml(commit.time || '')}</dd><dt>Parents</dt><dd>${escapeHtml((commit.parents || []).join(', ') || 'Root commit')}</dd><dt>Tags</dt><dd>${escapeHtml(tagText)}</dd><dt>Files</dt><dd>${escapeHtml([...(commit.files || []), ...Object.keys(commit.changes || {})].join(', ') || 'No file list recorded')}</dd></dl>`;
+  els.commitDiffOutput.innerHTML = colorDiff(app.data?.diff_text || 'No working-tree diff available.');
 }
 
 function renderBranches(branches) {
   const current = app.data?.current_branch || '';
   const names = Object.keys(branches);
-  els.branchSelector.innerHTML = names.map((name) => `<option value="${escapeHtml(name)}" ${name === current ? 'selected' : ''}>${escapeHtml(name)}</option>`).join('');
+  const options = names.map((name) => `<option value="${escapeHtml(name)}" ${name === current ? 'selected' : ''}>${escapeHtml(name)}</option>`).join('');
+  els.branchSelector.innerHTML = options;
+  els.mergeBaseBranch.innerHTML = options;
+  els.mergeCompareBranch.innerHTML = names.filter((name) => name !== current).map((name) => `<option value="${escapeHtml(name)}">${escapeHtml(name)}</option>`).join('');
   els.branchStartPoint.innerHTML = '<option value="">Start from current HEAD</option>' + (app.data?.log || []).map((commit) => `<option value="${escapeHtml(commit.id)}">${escapeHtml(commit.message || commit.id)} · ${escapeHtml(commit.id)}</option>`).join('');
-  els.branchList.innerHTML = names.map((name) => `<article class="branch-card ${name === current ? 'active' : ''}"><strong>${escapeHtml(name)}</strong><span>${escapeHtml(branches[name] || 'No commits')}</span></article>`).join('') || '<p class="muted">No branches yet.</p>';
-  els.mergeCandidates.innerHTML = names.filter((name) => name !== current).map((name) => `<button class="merge-card" data-merge="${escapeHtml(name)}"><strong>${escapeHtml(name)}</strong><span>Merge into ${escapeHtml(current || 'current branch')}</span></button>`).join('') || '<p class="muted">No merge candidates.</p>';
+  els.branchList.innerHTML = names.map((name) => `<article class="branch-card ${name === current ? 'active' : ''}"><div><strong>${escapeHtml(name)}</strong><span>${escapeHtml(branches[name] || 'No commits')}</span></div><button class="button compact ghost" data-switch-branch="${escapeHtml(name)}">Switch</button></article>`).join('') || '<p class="muted">No branches yet.</p>';
+  els.branchMergeCandidates.innerHTML = names.filter((name) => name !== current).map((name) => `<button class="merge-card" data-merge="${escapeHtml(name)}"><strong>${escapeHtml(name)}</strong><span>Merge into ${escapeHtml(current || 'current branch')}</span></button>`).join('') || '<p class="muted">No merge candidates.</p>';
 }
 
-function renderFiles() {
-  const query = els.fileSearch.value.toLowerCase();
-  const files = (app.data?.files || []).filter((file) => file.path.toLowerCase().includes(query));
-  els.fileList.innerHTML = files.length ? files.map((file) => `<button class="file-row" data-path="${escapeHtml(file.path)}"><span>${escapeHtml(file.path)}</span><em>${file.size} bytes</em></button>`).join('') : '<p class="empty-state muted">No files found.</p>';
+function renderMergeRequest(changes) {
+  els.mergeReview.innerHTML = changes.length ? changes.map((change) => `<article><strong>${escapeHtml(change.path)}</strong><span>${escapeHtml(change.label || change.status)}</span></article>`).join('') : '<p class="muted">No current working-tree changes to review.</p>';
+  els.mergeDiffOutput.innerHTML = colorDiff(app.data?.diff_text || 'No diff available.');
 }
 
 function renderRemotes(remotes) {
-  els.remoteList.innerHTML = Object.entries(remotes).map(([name, path]) => `<p><strong>${escapeHtml(name)}</strong><br><span>${escapeHtml(path)}</span></p>`).join('') || '<p class="muted">No remotes configured.</p>';
+  els.remoteList.innerHTML = Object.entries(remotes).map(([name, path]) => `<article><strong>${escapeHtml(name)}</strong><span>${escapeHtml(path)}</span></article>`).join('') || '<p class="muted">No remotes configured.</p>';
 }
 
 async function openFile(path) {
@@ -182,6 +170,13 @@ async function openFile(path) {
   els.editorPath.value = file.path;
   els.editorTitle.textContent = file.path;
   els.fileEditor.value = file.content;
+}
+
+function colorDiff(diff) {
+  return escapeHtml(cleanOutput(diff)).split('\n').map((line) => {
+    const cls = line.startsWith('+') && !line.startsWith('+++') ? 'added-line' : line.startsWith('-') && !line.startsWith('---') ? 'removed-line' : 'context-line';
+    return `<span class="${cls}">${line || ' '}</span>`;
+  }).join('\n');
 }
 
 function shortPath(path) {
@@ -193,72 +188,39 @@ function escapeHtml(value) {
   return String(value ?? '').replace(/[&<>"]/g, (char) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' })[char]);
 }
 
+function navigate(page) {
+  app.page = page;
+  window.location.hash = page;
+  renderPages();
+}
+
+$$('[data-page-link]').forEach((link) => link.addEventListener('click', (event) => { event.preventDefault(); navigate(link.dataset.pageLink); }));
 els.loadRepo.addEventListener('click', () => loadState(els.repoPath.value));
-els.initializeRepo.addEventListener('click', () => act('initialize', {}, 'Workspace tracking started'));
-els.refreshState.addEventListener('click', () => loadState().then(() => showToast('Workspace refreshed')));
-els.stageAll.addEventListener('click', () => act('stage_all', {}, 'All changes staged'));
-els.unstageAll.addEventListener('click', async () => {
-  for (const change of (app.data?.changes || []).filter((item) => item.staged)) await act('unstage_file', { path: change.path }, `Unstaged ${change.path}`);
-});
-
-$('#changes').addEventListener('click', (event) => {
-  const select = event.target.closest('[data-select-change]');
-  const toggle = event.target.closest('[data-toggle-stage]');
-  if (select) { app.selectedChange = select.dataset.selectChange; render(); }
-  if (toggle) act(toggle.dataset.staged === 'true' ? 'unstage_file' : 'stage_file', { path: toggle.dataset.toggleStage }, toggle.dataset.staged === 'true' ? 'Change unstaged' : 'Change staged');
-});
-
-els.commitForm.addEventListener('submit', (event) => {
-  event.preventDefault();
-  const message = els.commitMessage.value.trim();
-  if (!message) return showToast('Write a commit message first');
-  act('commit', { message }, 'Commit created').then(() => { els.commitMessage.value = ''; app.selectedCommit = app.data?.log?.at(-1) || null; });
-});
-
-els.commitTimeline.addEventListener('click', (event) => {
-  const item = event.target.closest('[data-commit]');
-  if (!item) return;
-  app.selectedCommit = (app.data?.log || []).find((commit) => commit.id === item.dataset.commit);
-  render();
-});
+els.initializeRepo.addEventListener('click', () => act('initialize', {}, 'Repository tracking started'));
+els.refreshState.addEventListener('click', () => loadState().then(() => showToast('Repository refreshed')));
 els.branchSelector.addEventListener('change', () => act('switch_branch', { branch: els.branchSelector.value }, `Switched to ${els.branchSelector.value}`));
-els.createBranch.addEventListener('click', () => {
-  if (!els.newBranchName.value.trim()) return showToast('Name the new branch first');
-  act('create_branch', { name: els.newBranchName.value.trim(), commit: els.branchStartPoint.value }, 'Branch created').then(() => { els.newBranchName.value = ''; });
-});
-els.mergeCandidates.addEventListener('click', (event) => {
-  const card = event.target.closest('[data-merge]');
-  if (card) act('merge_branch', { branch: card.dataset.merge }, `Merged ${card.dataset.merge}`);
-});
-els.continueMerge.addEventListener('click', () => act('merge_continue', {}, 'Merge completed'));
-els.abortMerge.addEventListener('click', () => act('merge_abort', {}, 'Merge aborted'));
-
 els.fileSearch.addEventListener('input', renderFiles);
 els.fileList.addEventListener('click', (event) => { const row = event.target.closest('[data-path]'); if (row) openFile(row.dataset.path); });
 els.newFile.addEventListener('click', () => { els.editorTitle.textContent = 'New file'; els.editorPath.value = 'new-file.txt'; els.fileEditor.value = ''; });
-els.saveFile.addEventListener('click', async () => {
-  const result = await request('/api/file', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ repo: app.repo, path: els.editorPath.value, content: els.fileEditor.value }) });
-  app.data = result.state; render(); showToast('File saved');
-});
-els.deleteFile.addEventListener('click', async () => {
-  const path = els.editorPath.value;
-  if (!path || !window.confirm(`Delete ${path}?`)) return;
-  const result = await request(apiUrl('/api/file', { repo: app.repo, path }), { method: 'DELETE' });
-  app.data = result.state; els.fileEditor.value = ''; render(); showToast('File deleted');
-});
-
+els.saveFile.addEventListener('click', async () => { const result = await request('/api/file', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ repo: app.repo, path: els.editorPath.value, content: els.fileEditor.value }) }); app.data = result.state; render(); showToast('File saved'); });
+els.deleteFile.addEventListener('click', async () => { const path = els.editorPath.value; if (!path || !window.confirm(`Delete ${path}?`)) return; const result = await request(apiUrl('/api/file', { repo: app.repo, path }), { method: 'DELETE' }); app.data = result.state; els.fileEditor.value = ''; render(); showToast('File deleted'); });
+els.stageAll.addEventListener('click', () => act('stage_all', {}, 'All changes staged'));
+$('#page-code').addEventListener('click', (event) => { const toggle = event.target.closest('[data-toggle-stage]'); if (toggle) act(toggle.dataset.staged === 'true' ? 'unstage_file' : 'stage_file', { path: toggle.dataset.toggleStage }, toggle.dataset.staged === 'true' ? 'Change unstaged' : 'Change staged'); });
+els.commitForm.addEventListener('submit', (event) => { event.preventDefault(); const message = els.commitMessage.value.trim(); if (!message) return showToast('Write a commit message first'); act('commit', { message }, 'Commit created').then(() => { els.commitMessage.value = ''; app.selectedCommit = app.data?.log?.at(-1) || null; }); });
+els.commitTimeline.addEventListener('click', (event) => { const item = event.target.closest('[data-commit]'); if (!item) return; app.selectedCommit = (app.data?.log || []).find((commit) => commit.id === item.dataset.commit); render(); });
+els.branchList.addEventListener('click', (event) => { const button = event.target.closest('[data-switch-branch]'); if (button) act('switch_branch', { branch: button.dataset.switchBranch }, `Switched to ${button.dataset.switchBranch}`); });
+els.createBranch.addEventListener('click', () => { if (!els.newBranchName.value.trim()) return showToast('Name the new branch first'); act('create_branch', { name: els.newBranchName.value.trim(), commit: els.branchStartPoint.value }, 'Branch created').then(() => { els.newBranchName.value = ''; }); });
+els.branchMergeCandidates.addEventListener('click', (event) => { const card = event.target.closest('[data-merge]'); if (card) act('merge_branch', { branch: card.dataset.merge }, `Merged ${card.dataset.merge}`); });
+els.mergeSelected.addEventListener('click', () => act('merge_branch', { branch: els.mergeCompareBranch.value }, `Merged ${els.mergeCompareBranch.value}`));
+els.continueMerge.addEventListener('click', () => act('merge_continue', {}, 'Merge completed'));
+els.abortMerge.addEventListener('click', () => act('merge_abort', {}, 'Merge aborted'));
 els.addRemote.addEventListener('click', () => act('add_remote', { remote: els.remoteName.value, remote_path: els.remotePath.value }, 'Remote added'));
-els.fetchRemote.addEventListener('click', () => act('fetch_remote', { remote: els.remoteName.value }, 'Fetched remote changes'));
-els.pullRemote.addEventListener('click', () => act('pull_remote', { remote: els.remoteName.value, branch: app.data?.current_branch || 'main' }, 'Pulled remote branch'));
-els.pushRemote.addEventListener('click', () => act('push_remote', { remote: els.remoteName.value, branch: app.data?.current_branch || 'main' }, 'Pushed current branch'));
+els.fetchRemote.addEventListener('click', () => act('fetch_remote', { remote: els.remoteName.value }, 'Fetched remote'));
+els.pullRemote.addEventListener('click', () => act('pull_remote', { remote: els.remoteName.value, branch: app.data?.current_branch || 'main' }, 'Pulled branch'));
+els.pushRemote.addEventListener('click', () => act('push_remote', { remote: els.remoteName.value, branch: app.data?.current_branch || 'main' }, 'Pushed branch'));
+els.ignoreButton.addEventListener('click', () => act('ignore_path', { path: els.ignorePath.value }, 'Ignore rule added'));
 els.checkIntegrity.addEventListener('click', () => act('check_integrity', {}, 'Repository checked'));
 
-const navLinks = $$('.studio-nav a');
-const observer = new IntersectionObserver((entries) => {
-  const visible = entries.filter((entry) => entry.isIntersecting).sort((a, b) => b.intersectionRatio - a.intersectionRatio)[0];
-  if (!visible) return;
-  navLinks.forEach((link) => link.classList.toggle('active', link.getAttribute('href') === `#${visible.target.id}`));
-}, { rootMargin: '-25% 0px -60% 0px', threshold: [0.15, 0.3, 0.6] });
-navLinks.map((link) => document.querySelector(link.getAttribute('href'))).filter(Boolean).forEach((section) => observer.observe(section));
-
+const initialPage = window.location.hash.replace('#', '') || 'code';
+app.page = ['code', 'commits', 'branches', 'merge-requests', 'remotes', 'settings'].includes(initialPage) ? initialPage : 'code';
 loadState(new URLSearchParams(window.location.search).get('repo') || '').catch((error) => showToast(error.message));

@@ -70,7 +70,7 @@ Leaf includes a local web interface that keeps the same minimalist style while c
 ```bash
 python leaf_web.py --repo /path/to/project --port 8765
 ```
-Then open `http://127.0.0.1:8765` to use Leaf Studio: a workflow-based interface with automatic status, visual change staging, commit boxes, diff review, clickable history, branch management, merge cards, file editing, remote sync, and repository health checks. The UI is designed so users work with version-control concepts instead of manually choosing CLI commands.
+Then open `http://127.0.0.1:8765` to use Leaf Studio: a GitHub-style, page-based repository interface with dedicated Code, Commits, Branches, Merge Requests, Remotes, and Settings pages. The UI focuses on repository contents, visual change staging, commit boxes, history review, branch management, remote sync, ignore rules, and integrity checks instead of exposing CLI commands.
 
 ## Repository Structure
 ```text

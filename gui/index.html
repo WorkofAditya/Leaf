@@ -3,7 +3,7 @@
   <head>
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1" />
-    <meta name="description" content="Leaf Studio, a workflow-based web interface for Leaf version control." />
+    <meta name="description" content="Leaf Studio, a GitHub-style web interface for Leaf repositories." />
     <title>Leaf Studio</title>
     <link rel="preconnect" href="https://fonts.googleapis.com" />
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
@@ -11,168 +11,119 @@
     <link rel="stylesheet" href="styles.css" />
   </head>
   <body>
-    <div class="studio-shell">
-      <aside class="studio-sidebar" aria-label="Workspace navigation">
-        <a class="studio-brand" href="#workspace" aria-label="Leaf Studio home">
+    <header class="repo-header">
+      <div class="repo-bar">
+        <a class="brand" href="#code" data-page-link="code" aria-label="Leaf Studio Code page">
           <span class="brand-mark" aria-hidden="true">L</span>
-          <span><strong>Leaf Studio</strong><small>Version control workspace</small></span>
+          <span><strong>Leaf Studio</strong><small id="connectionLabel">Opening workspace…</small></span>
         </a>
-        <nav class="studio-nav">
-          <a href="#workspace" class="active">Workspace</a>
-          <a href="#changes">Changes</a>
-          <a href="#history">History</a>
-          <a href="#branches">Branches</a>
-          <a href="#files">Files</a>
-          <a href="#sync">Sync</a>
-        </nav>
-        <div class="sidebar-card compact-card">
-          <span class="status-dot"></span>
-          <p id="connectionLabel">Connecting to local Leaf backend</p>
-          <strong id="sidebarBranch">No branch</strong>
+        <div class="repo-open">
+          <input id="repoPath" aria-label="Workspace path" autocomplete="off" />
+          <button id="loadRepo" class="button primary">Open repository</button>
         </div>
-      </aside>
+      </div>
 
-      <main class="studio-main">
-        <section class="studio-topbar" id="workspace">
-          <div>
-            <p class="eyebrow">Repository</p>
-            <h1 id="repoTitle">Open a Leaf workspace</h1>
-            <p id="repoSubtitle" class="hero-text">Choose a folder, then manage changes, history, branches, and sync through visual workflows.</p>
-          </div>
-          <div class="repo-picker">
-            <label for="repoPath">Workspace path</label>
-            <div class="repo-input-row">
-              <input id="repoPath" type="text" autocomplete="off" />
-              <button id="loadRepo" class="primary">Open</button>
-            </div>
-            <button id="initializeRepo" class="button ghost full-width">Start tracking this folder</button>
-          </div>
-        </section>
+      <div class="repo-title-row">
+        <div>
+          <p class="eyebrow">Repository</p>
+          <h1 id="repoTitle">Select a repository</h1>
+          <p id="repoSubtitle" class="muted">Browse code, commits, branches, merge requests, remotes, and settings from dedicated pages.</p>
+        </div>
+        <div class="repo-actions">
+          <label class="branch-select">Current branch<select id="branchSelector"></select></label>
+          <button id="initializeRepo" class="button ghost">Start tracking folder</button>
+        </div>
+      </div>
 
-        <section class="insight-grid" aria-label="Repository summary">
-          <article><span>Current branch</span><strong id="currentBranch">—</strong><p id="headCommit">No commits yet</p></article>
-          <article><span>Changed files</span><strong id="changedCount">0</strong><p id="stagedSummary">0 staged for commit</p></article>
-          <article><span>History</span><strong id="commitCount">0</strong><p id="latestCommit">No timeline yet</p></article>
-          <article><span>Repository health</span><strong id="repoHealth">Ready</strong><p id="mergeState">No merge in progress</p></article>
-        </section>
+      <nav class="repo-tabs" aria-label="Repository navigation">
+        <a href="#code" data-page-link="code" class="active">Code</a>
+        <a href="#commits" data-page-link="commits">Commits</a>
+        <a href="#branches" data-page-link="branches">Branches</a>
+        <a href="#merge-requests" data-page-link="merge-requests">Merge Requests</a>
+        <a href="#remotes" data-page-link="remotes">Remotes</a>
+        <a href="#settings" data-page-link="settings">Settings</a>
+      </nav>
+    </header>
 
-        <section class="workbench" id="changes">
-          <aside class="changes-column panel">
-            <div class="panel-header">
-              <div><p class="eyebrow">Changes</p><h2>Review work</h2></div>
-              <button id="refreshState" class="button compact ghost">Refresh</button>
-            </div>
+    <main class="page-shell">
+      <section class="summary-grid" aria-label="Repository summary">
+        <article><span>Branch</span><strong id="currentBranch">—</strong><p id="headCommit">No commits yet</p></article>
+        <article><span>Changes</span><strong id="changedCount">0</strong><p id="stagedSummary">0 staged</p></article>
+        <article><span>Commits</span><strong id="commitCount">0</strong><p id="latestCommit">No history yet</p></article>
+        <article><span>Status</span><strong id="repoHealth">Ready</strong><p id="mergeState">No merge in progress</p></article>
+      </section>
 
-            <div class="changes-toolbar">
-              <button id="stageAll" class="button compact">Stage all</button>
-              <button id="unstageAll" class="button compact ghost">Unstage all</button>
-            </div>
-
-            <div class="changes-split">
-              <div>
-                <h3>Staged</h3>
-                <div id="stagedList" class="change-list"></div>
-              </div>
-              <div>
-                <h3>Unstaged</h3>
-                <div id="unstagedList" class="change-list"></div>
-              </div>
-            </div>
-
-            <form id="commitForm" class="commit-box hidden">
-              <label for="commitMessage">Commit message</label>
-              <textarea id="commitMessage" rows="4" placeholder="Describe what changed"></textarea>
-              <button id="commitButton" class="primary" type="submit">Commit staged changes</button>
-            </form>
+      <section id="page-code" class="repo-page active" data-page="code">
+        <div class="page-heading">
+          <div><p class="eyebrow">Code</p><h2>Files and working changes</h2></div>
+          <button id="refreshState" class="button ghost compact">Refresh</button>
+        </div>
+        <div class="code-layout">
+          <aside class="panel file-panel">
+            <div class="panel-header"><h3>Repository file tree</h3><button id="newFile" class="button compact">New file</button></div>
+            <label class="search-box"><span>Filter files</span><input id="fileSearch" type="search" placeholder="README.md, src/app.py…" /></label>
+            <div id="fileList" class="file-list"></div>
           </aside>
 
-          <section class="diff-workspace panel">
-            <div class="panel-header">
-              <div><p class="eyebrow">Diff</p><h2 id="diffTitle">Select a changed file</h2></div>
-              <span id="selectedChangeStatus" class="pill">No file selected</span>
-            </div>
-            <pre class="visual-diff"><code id="diffOutput">Changed files will appear here automatically.</code></pre>
-          </section>
-        </section>
-
-        <section class="history-branches-grid">
-          <section class="panel" id="history">
-            <div class="panel-header">
-              <div><p class="eyebrow">Timeline</p><h2>Commit history</h2></div>
-            </div>
-            <ol class="timeline clickable-timeline" id="commitTimeline"></ol>
-          </section>
-
-          <section class="panel commit-detail-card">
-            <div class="panel-header"><div><p class="eyebrow">Commit details</p><h2 id="commitDetailTitle">Select a commit</h2></div></div>
-            <div id="commitDetails" class="commit-details muted">Click a commit in the timeline to view its message, parents, branch, tags, and changed files.</div>
-          </section>
-        </section>
-
-        <section class="panel branch-manager" id="branches">
-          <div class="panel-header">
-            <div><p class="eyebrow">Branches</p><h2>Branch manager</h2></div>
-            <label class="branch-switcher">Switch branch<select id="branchSelector"></select></label>
-          </div>
-          <div class="branch-layout">
-            <div>
-              <h3>Branches</h3>
-              <div id="branchList" class="branch-list"></div>
-            </div>
-            <div class="branch-actions-card">
-              <h3>Create branch</h3>
-              <input id="newBranchName" placeholder="feature/design-polish" />
-              <select id="branchStartPoint"></select>
-              <button id="createBranch" class="primary">Create branch</button>
-              <hr />
-              <h3>Merge into current branch</h3>
-              <p class="muted">Choose a branch card to merge it into the active branch.</p>
-              <div id="mergeCandidates" class="merge-candidates"></div>
-              <div id="mergeControls" class="merge-controls hidden">
-                <button id="continueMerge" class="button">Mark conflicts resolved</button>
-                <button id="abortMerge" class="button danger">Abort merge</button>
-              </div>
-            </div>
-          </div>
-        </section>
-
-        <section class="files-sync-grid">
-          <section class="panel" id="files">
-            <div class="panel-header">
-              <div><p class="eyebrow">Files</p><h2>Workspace files</h2></div>
-              <button id="newFile" class="button compact">New file</button>
-            </div>
-            <label class="search-box inline-search"><span>Filter files</span><input id="fileSearch" type="search" placeholder="README.md, src/app.py..." /></label>
-            <div id="fileList" class="file-list real-files"></div>
-          </section>
-
           <section class="panel editor-panel">
-            <div class="panel-header">
-              <div><p class="eyebrow">Editor</p><h2 id="editorTitle">Select a file</h2></div>
-              <div class="editor-actions"><button id="saveFile" class="button compact primary">Save file</button><button id="deleteFile" class="button compact danger">Delete</button></div>
-            </div>
+            <div class="panel-header"><h3 id="editorTitle">Select a file</h3><div class="button-row"><button id="saveFile" class="button primary compact">Save file</button><button id="deleteFile" class="button danger compact">Delete</button></div></div>
             <input id="editorPath" class="path-input" placeholder="path/to/file.txt" />
-            <textarea id="fileEditor" spellcheck="false" placeholder="Open or create a text file to edit it here."></textarea>
+            <textarea id="fileEditor" spellcheck="false" placeholder="Open or create a file to edit it here."></textarea>
           </section>
-        </section>
 
-        <section class="panel sync-panel" id="sync">
-          <div class="panel-header"><div><p class="eyebrow">Sync</p><h2>Remotes and publishing</h2></div><button id="checkIntegrity" class="button compact ghost">Check repository</button></div>
-          <div class="sync-layout">
-            <div><h3>Configured remotes</h3><div id="remoteList" class="remote-list"></div></div>
-            <div class="sync-actions">
-              <input id="remoteName" placeholder="origin" />
-              <input id="remotePath" placeholder="../leaf-remote" />
-              <button id="addRemote" class="button">Add remote</button>
-              <button id="fetchRemote" class="button">Fetch</button>
-              <button id="pullRemote" class="button">Pull current branch</button>
-              <button id="pushRemote" class="button primary">Push current branch</button>
-            </div>
-          </div>
-          <div id="activityLog" class="activity-log">Ready.</div>
-        </section>
-      </main>
-    </div>
+          <aside class="panel changes-panel">
+            <div class="panel-header"><h3>Changes</h3><button id="stageAll" class="button compact">Stage all</button></div>
+            <div class="changes-group"><h4>Staged</h4><div id="stagedList" class="change-list"></div></div>
+            <div class="changes-group"><h4>Unstaged</h4><div id="unstagedList" class="change-list"></div></div>
+            <form id="commitForm" class="commit-box hidden">
+              <label for="commitMessage">Commit message</label>
+              <textarea id="commitMessage" rows="4" placeholder="Summarize your change"></textarea>
+              <button id="commitButton" class="button primary" type="submit">Commit staged changes</button>
+            </form>
+          </aside>
+        </div>
+      </section>
+
+      <section id="page-commits" class="repo-page" data-page="commits">
+        <div class="page-heading"><div><p class="eyebrow">Commits</p><h2>History and details</h2></div></div>
+        <div class="two-column-layout">
+          <section class="panel"><h3>Commit timeline</h3><ol id="commitTimeline" class="timeline"></ol></section>
+          <section class="panel"><h3 id="commitDetailTitle">Select a commit</h3><div id="commitDetails" class="commit-details muted">Choose a commit to inspect metadata and changed files.</div><pre class="visual-diff"><code id="commitDiffOutput">Working-tree diffs appear here when available.</code></pre></section>
+        </div>
+      </section>
+
+      <section id="page-branches" class="repo-page" data-page="branches">
+        <div class="page-heading"><div><p class="eyebrow">Branches</p><h2>Branch list and actions</h2></div></div>
+        <div class="two-column-layout">
+          <section class="panel"><h3>Branches</h3><div id="branchList" class="branch-list"></div></section>
+          <section class="panel form-card"><h3>Create branch</h3><input id="newBranchName" placeholder="feature/design-polish" /><select id="branchStartPoint"></select><button id="createBranch" class="button primary">Create branch</button><hr /><h3>Merge branch</h3><p class="muted">Merge a branch into the currently selected branch.</p><div id="branchMergeCandidates" class="card-list"></div></section>
+        </div>
+      </section>
+
+      <section id="page-merge-requests" class="repo-page" data-page="merge-requests">
+        <div class="page-heading"><div><p class="eyebrow">Merge Requests</p><h2>Compare, review, and resolve</h2></div></div>
+        <div class="merge-layout">
+          <section class="panel form-card"><h3>Compare branches</h3><label>Base branch<select id="mergeBaseBranch"></select></label><label>Compare branch<select id="mergeCompareBranch"></select></label><button id="mergeSelected" class="button primary">Merge compare branch</button><div id="mergeControls" class="merge-controls hidden"><button id="continueMerge" class="button">Mark conflicts resolved</button><button id="abortMerge" class="button danger">Abort merge</button></div></section>
+          <section class="panel"><h3>Review changes</h3><div id="mergeReview" class="review-list"></div><pre class="visual-diff"><code id="mergeDiffOutput">Select branches to review the current working diff and conflict state.</code></pre></section>
+        </div>
+      </section>
+
+      <section id="page-remotes" class="repo-page" data-page="remotes">
+        <div class="page-heading"><div><p class="eyebrow">Remotes</p><h2>Remote repositories and sync</h2></div></div>
+        <div class="two-column-layout">
+          <section class="panel"><h3>Configured remotes</h3><div id="remoteList" class="remote-list"></div></section>
+          <section class="panel form-card"><h3>Add or sync remote</h3><input id="remoteName" placeholder="origin" /><input id="remotePath" placeholder="../leaf-remote" /><div class="button-grid"><button id="addRemote" class="button">Add remote</button><button id="fetchRemote" class="button">Fetch</button><button id="pullRemote" class="button">Pull current branch</button><button id="pushRemote" class="button primary">Push current branch</button></div></section>
+        </div>
+      </section>
+
+      <section id="page-settings" class="repo-page" data-page="settings">
+        <div class="page-heading"><div><p class="eyebrow">Settings</p><h2>Repository settings</h2></div></div>
+        <div class="two-column-layout">
+          <section class="panel form-card"><h3>Ignore rules</h3><input id="ignorePath" placeholder="dist/, *.log, secrets.txt" /><button id="ignoreButton" class="button">Add ignore rule</button></section>
+          <section class="panel form-card"><h3>Integrity tools</h3><p class="muted">Check commit directories, parents, branches, and tags.</p><button id="checkIntegrity" class="button primary">Check repository integrity</button><div id="activityLog" class="activity-log">Ready.</div></section>
+        </div>
+      </section>
+    </main>
 
     <div class="toast" id="toast" role="status" aria-live="polite">Ready</div>
     <script src="script.js"></script>
