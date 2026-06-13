@@ -10,7 +10,6 @@ from Modules.commands import (
     # Remote repository commands are intentionally disabled.
     # leaf_fetch,
     leaf_fsck,
-    leaf_help,
     leaf_ignore,
     leaf_init,
     leaf_log,
@@ -26,6 +25,7 @@ from Modules.commands import (
     leaf_tag,
     leaf_version,
 )
+from Modules.help import leaf_help
 
 
 def main():
