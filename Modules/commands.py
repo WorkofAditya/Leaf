@@ -4,13 +4,49 @@ import shutil
 import time
 import urllib.request
 
-from Modules.common import BLUE, BRANCHES_FILE, COMMITS_DIR, DRY, GREEN, GRAY, HERB, LEAF, LOG_FILE, RED, RESET, SPROUT, TREE, VCS_DIR
+from Modules.common import (
+    BLUE,
+    BRANCHES_FILE,
+    COMMITS_DIR,
+    DRY,
+    GREEN,
+    GRAY,
+    HERB,
+    INDEX_FILE,
+    LEAF,
+    LOG_FILE,
+    MERGE_STATE_FILE,
+    RED,
+    REMOTES_FILE,
+    RESET,
+    SPROUT,
+    TAGS_FILE,
+    TREE,
+    VCS_DIR,
+)
 from Modules.core import leaf_get_head_commit_id, leaf_get_last_state, leaf_hash_commit
 from Modules.files import is_binary, leaf_get_all_files, leaf_read_file, leaf_snapshot
-from Modules.graph import commit_chain, commit_map, is_ancestor
+from Modules.graph import commit_chain, commit_map, find_merge_base, is_ancestor
 from Modules.head_utils import get_head_module
 from Modules.rebuild import leaf_rebuild, write_working_tree
-from Modules.storage import load_branches, load_sessions, safe_load_log, safe_save_log, save_branches, save_sessions
+from Modules.storage import (
+    clear_index,
+    clear_merge_state,
+    load_branches,
+    load_index,
+    load_merge_state,
+    load_remotes,
+    load_sessions,
+    load_tags,
+    safe_load_log,
+    safe_save_log,
+    save_branches,
+    save_index,
+    save_merge_state,
+    save_remotes,
+    save_sessions,
+    save_tags,
+)
 
 
 def leaf_init():
@@ -22,59 +58,139 @@ def leaf_init():
         with open(BRANCHES_FILE, "w") as f:
             f.write('{"main": null}')
     save_sessions({})
+    save_index({})
+    save_tags({})
+    save_remotes({})
+    clear_merge_state()
     get_head_module().init_head(VCS_DIR)
     get_head_module().write_current_branch(VCS_DIR, "main")
     print(f"{SPROUT} Initialized empty leaf repository")
+
+
+def _current_working_state():
+    state = {}
+    for file in leaf_get_all_files():
+        if not is_binary(file):
+            state[file] = leaf_read_file(file)
+    return state
+
+
+def _diff_states(base_state, target_state):
+    changes = {}
+    deleted = sorted(set(base_state) - set(target_state))
+    for file in sorted(set(target_state)):
+        old = base_state.get(file, [])
+        new = target_state[file]
+        if old != new:
+            changes[file] = list(difflib.ndiff(old, new))
+    return changes, deleted
+
+
+def _write_commit_files(commit_path, commit_data, target_state):
+    os.makedirs(commit_path, exist_ok=True)
+    if commit_data["type"] == "snapshot":
+        leaf_snapshot(commit_path)
+        return
+    for file, diff in commit_data.get("changes", {}).items():
+        save_path = os.path.join(commit_path, file + ".diff")
+        os.makedirs(os.path.dirname(save_path), exist_ok=True)
+        with open(save_path, "w") as f:
+            f.write("\n".join(diff))
+    for file in target_state:
+        full_path = os.path.join(commit_path, "state", file)
+        os.makedirs(os.path.dirname(full_path), exist_ok=True)
+        with open(full_path, "w") as f:
+            f.writelines(target_state[file])
+
+
+def _create_commit(msg, target_state=None, parents=None, branch=None, merge=False):
+    log = safe_load_log()
+    timestamp = time.strftime("%Y-%m-%d %H:%M:%S")
+    commit_id = leaf_hash_commit(msg + timestamp + str(time.time()))[:10]
+    commit_path = os.path.join(COMMITS_DIR, commit_id)
+    parent = parents[0] if parents else leaf_get_head_commit_id(log)
+    base_state = leaf_rebuild(parent, log) if parent else {}
+    if target_state is None:
+        target_state = _current_working_state()
+
+    commit_data = {
+        "id": commit_id,
+        "message": msg,
+        "time": timestamp,
+        "branch": branch if branch is not None else get_head_module().read_current_branch(VCS_DIR),
+        "parent": parent,
+        "parents": parents or ([parent] if parent else []),
+        "type": "diff",
+        "changes": {},
+        "deleted": [],
+    }
+    if not log:
+        commit_data["type"] = "snapshot"
+        commit_data["files"] = sorted(target_state)
+    else:
+        changes, deleted = _diff_states(base_state, target_state)
+        commit_data["changes"] = changes
+        commit_data["deleted"] = deleted
+        if not changes and not deleted and not merge:
+            print(f"{DRY} No changes detected, nothing to save")
+            return None
+
+    _write_commit_files(commit_path, commit_data, target_state)
+    log.append(commit_data)
+    safe_save_log(log)
+
+    branches = load_branches()
+    active_branch = get_head_module().read_current_branch(VCS_DIR)
+    if active_branch:
+        branches[active_branch] = commit_id
+        save_branches(branches)
+        sessions = load_sessions()
+        sessions.pop(active_branch, None)
+        save_sessions(sessions)
+    get_head_module().write_head(VCS_DIR, commit_id)
+    clear_index()
+    return commit_id
+
+
+def _apply_index_to_state(base_state, index):
+    state = {path: list(lines) for path, lines in base_state.items()}
+    for path, entry in index.items():
+        if entry.get("deleted"):
+            state.pop(path, None)
+        else:
+            state[path] = entry.get("content", [])
+    return state
 
 
 def leaf_save(msg):
     if not os.path.exists(VCS_DIR):
         print(f"{DRY} Not a repository")
         return
-    log = safe_load_log()
-    timestamp = time.strftime("%Y-%m-%d %H:%M:%S")
-    commit_id = leaf_hash_commit(msg + timestamp + str(time.time()))[:10]
-    commit_path = os.path.join(COMMITS_DIR, commit_id)
-    commit_data = {"id": commit_id, "message": msg, "time": timestamp, "branch": get_head_module().read_current_branch(VCS_DIR), "parent": leaf_get_head_commit_id(log), "type": "diff", "changes": {}, "deleted": []}
-    current_files = set(leaf_get_all_files())
-    if not log:
-        os.makedirs(commit_path)
-        leaf_snapshot(commit_path)
-        commit_data["type"] = "snapshot"
-        commit_data["files"] = list(current_files)
-    else:
-        previous_state = leaf_get_last_state()
-        deleted = set(previous_state.keys()) - current_files
-        commit_data["deleted"] = list(deleted)
-        for file in current_files:
-            if is_binary(file):
-                continue
-            new = leaf_read_file(file)
-            old = previous_state.get(file, [])
-            if new != old:
-                commit_data["changes"][file] = list(difflib.ndiff(old, new))
-        if not commit_data["changes"] and not deleted:
-            print(f"{DRY} No changes detected, nothing to save")
+    msg = msg or "save"
+    merge_state = load_merge_state()
+    index = load_index()
+    parents = None
+    merge = False
+    target_state = None
+    if merge_state:
+        conflicts = merge_state.get("conflicts", [])
+        unresolved = [path for path in conflicts if _file_has_conflict_markers(path)]
+        if unresolved:
+            print(f"{DRY} Resolve conflicts before saving merge: {', '.join(unresolved)}")
             return
-        os.makedirs(commit_path)
-        for file, diff in commit_data["changes"].items():
-            save_path = os.path.join(commit_path, file + ".diff")
-            os.makedirs(os.path.dirname(save_path), exist_ok=True)
-            with open(save_path, "w") as f:
-                f.write("\n".join(diff))
-    log.append(commit_data)
-    safe_save_log(log)
-    branches = load_branches()
-    branch = get_head_module().read_current_branch(VCS_DIR)
-    if branch:
-        branches[branch] = commit_id
-        save_branches(branches)
-        sessions = load_sessions()
-        if branch in sessions:
-            del sessions[branch]
-            save_sessions(sessions)
-    get_head_module().write_head(VCS_DIR, commit_id)
-    print(f"{LEAF} Saved commit {commit_id}")
+        parents = [merge_state.get("target"), merge_state.get("source")]
+        merge = True
+        target_state = _current_working_state()
+    elif index:
+        head_id = leaf_get_head_commit_id()
+        base_state = leaf_rebuild(head_id, safe_load_log()) if head_id else {}
+        target_state = _apply_index_to_state(base_state, index)
+
+    commit_id = _create_commit(msg, target_state=target_state, parents=parents, merge=merge)
+    if commit_id:
+        if merge:
+            clear_merge_state()
+        print(f"{LEAF} Saved commit {commit_id}")
 
 
 def leaf_log():
@@ -87,14 +203,19 @@ def leaf_log():
     if not head_id or head_id not in cmap:
         print(f"{DRY} No commits")
         return
+    tags_by_commit = {}
+    for tag, cid in load_tags().items():
+        tags_by_commit.setdefault(cid, []).append(tag)
     for commit_id in commit_chain(head_id, cmap):
         c = cmap[commit_id]
         marker = " (HEAD)" if c["id"] == head_id else ""
-        print(f"\n{HERB} commit {c['id']}{marker}")
+        tags = f" tags: {', '.join(sorted(tags_by_commit.get(commit_id, [])))}" if tags_by_commit.get(commit_id) else ""
+        parents = c.get("parents") or ([c.get("parent")] if c.get("parent") else [])
+        print(f"\n{HERB} commit {c['id']}{marker}{tags}")
+        if len(parents) > 1:
+            print(f"{TREE} Merge parents: {' '.join(parents)}")
         print(f"{LEAF} Message: {c['message']}")
         print(f"{SPROUT} Time: {c['time']}")
-
-
 
 
 def leaf_diff(commit_id=None):
@@ -109,12 +230,9 @@ def leaf_diff(commit_id=None):
         print(f"{DRY} Invalid commit id")
         return
     target = leaf_rebuild(commit_id, log)
-    current = {}
-    for f in leaf_get_all_files():
-        if not is_binary(f):
-            current[f] = leaf_read_file(f)
+    current = _current_working_state()
     any_diff = False
-    for f in set(target.keys()) | set(current.keys()):
+    for f in sorted(set(target.keys()) | set(current.keys())):
         old = target.get(f, [])
         new = current.get(f, [])
         if old != new:
@@ -137,12 +255,11 @@ def leaf_restore(commit_id):
         print(f"{DRY} Invalid commit id")
         return
     files = leaf_rebuild(commit_id, log)
-    if files is None:
-        print(f"{DRY} Restore failed")
-        return
     write_working_tree(files)
     get_head_module().write_head(VCS_DIR, commit_id)
     get_head_module().write_current_branch(VCS_DIR, "")
+    clear_index()
+    clear_merge_state()
     print(f"{TREE} Restored to commit {commit_id} (detached HEAD)")
 
 
@@ -150,6 +267,15 @@ def leaf_status():
     if not os.path.exists(LOG_FILE):
         print(f"{DRY} No repository")
         return
+    merge_state = load_merge_state()
+    if merge_state:
+        print(f"{TREE} Merge in progress from {merge_state.get('source_branch')} into {merge_state.get('current_branch')}")
+        for f in merge_state.get("conflicts", []):
+            print(f"{RED}{DRY} Conflict: {f}{RESET}")
+    index = load_index()
+    for path, entry in sorted(index.items()):
+        status = "Deleted" if entry.get("deleted") else "Staged"
+        print(f"{GREEN}{SPROUT} {status}: {path}{RESET}")
     last = leaf_get_last_state()
     current = set(leaf_get_all_files())
     last_files = set(last.keys())
@@ -157,19 +283,15 @@ def leaf_status():
     for f in current & last_files:
         if not is_binary(f) and leaf_read_file(f) != last[f]:
             modified.append(f)
-    if not added and not deleted and not modified:
+    if not added and not deleted and not modified and not index and not merge_state:
         print(f"{HERB} Clean working tree")
         return
-    for f in added:
+    for f in sorted(added):
         print(f"{GRAY}{SPROUT} Added: {f}{RESET}")
-    for f in modified:
+    for f in sorted(modified):
         print(f"{BLUE}{LEAF} Modified: {f}{RESET}")
-    for f in deleted:
+    for f in sorted(deleted):
         print(f"{RED}{DRY} Deleted: {f}{RESET}")
-
-
-def leaf_help():
-    print("""Leaf Version Control System\n\nUSAGE:\n    leaf <command> [options]\n\nCOMMANDS:\n    init\n        Initialize a new Leaf repository\n\n    save <message>\n        Create a new commit with current changes\n\n    log\n        Show current branch or detached HEAD history\n\n    restore <commit_id>\n        Restore repository to a specific commit in detached HEAD mode\n\n    status\n        Show changed, added, and deleted files\n\n    diff [commit_id]\n        Show differences against HEAD or a commit\n\n    ignore <path>\n        Add file or directory to .leafignore\n\n    branch [name]\n        List branches or create a new branch\n\n    checkout <branch>\n        Switch to another branch\n\n    merge <branch>\n        Merge a branch into current branch\n\n    help\n        Show help information\n\n    version\n        Show current Leaf version\n\nALIASES:\n    leaf help\n    leaf -h\n    leaf --help\n\n    leaf version\n    leaf -v\n\nEXAMPLES:\n    leaf init\n    leaf save "Initial commit"\n    leaf branch feature-login\n    leaf checkout feature-login\n\nLeaf VCS\nFast. Minimal. Local.""")
 
 
 def leaf_version():
@@ -180,7 +302,7 @@ def leaf_version():
                 if text:
                     print(text)
                     return
-        except:
+        except Exception:
             continue
     print(f"{DRY} Could not fetch version from remote")
 
@@ -206,21 +328,26 @@ def leaf_ignore(target):
     print(f"{SPROUT} Added to .leafignore: {target}")
 
 
-def leaf_branch(name=None):
-    branches = load_branches(); current = get_head_module().read_current_branch(VCS_DIR)
+def leaf_branch(name=None, commit_id=None):
+    branches = load_branches()
+    current = get_head_module().read_current_branch(VCS_DIR)
     if name is None:
-        for b in sorted(branches.keys()): print(f"{'*' if b == current else ' '} {b}")
+        for b in sorted(branches.keys()):
+            print(f"{'*' if b == current else ' '} {b}")
         return
-    if name in branches: print(f"{DRY} Branch already exists: {name}"); return
-    branches[name] = leaf_get_head_commit_id(); save_branches(branches); print(f"{SPROUT} Created branch {name}")
+    if name in branches:
+        print(f"{DRY} Branch already exists: {name}")
+        return
+    if commit_id and commit_id not in [c["id"] for c in safe_load_log()]:
+        print(f"{DRY} Invalid commit id")
+        return
+    branches[name] = commit_id or leaf_get_head_commit_id()
+    save_branches(branches)
+    print(f"{SPROUT} Created branch {name}")
 
 
 def _capture_working_state():
-    state = {}
-    for file in leaf_get_all_files():
-        if not is_binary(file):
-            state[file] = leaf_read_file(file)
-    return state
+    return _current_working_state()
 
 
 def _has_uncommitted_changes(state, head_state):
@@ -236,8 +363,8 @@ def _save_branch_session(branch):
     sessions = load_sessions()
     if _has_uncommitted_changes(working_state, head_state):
         sessions[branch] = working_state
-    elif branch in sessions:
-        del sessions[branch]
+    else:
+        sessions.pop(branch, None)
     save_sessions(sessions)
 
 
@@ -249,7 +376,11 @@ def _restore_branch_session(branch, fallback_state):
 def leaf_checkout(branch_name):
     branches = load_branches()
     if branch_name not in branches:
-        print(f"{DRY} Unknown branch: {branch_name}"); return
+        print(f"{DRY} Unknown branch: {branch_name}")
+        return
+    if load_merge_state():
+        print(f"{DRY} Cannot checkout during merge; use 'leaf merge --abort' first")
+        return
     current_branch = get_head_module().read_current_branch(VCS_DIR)
     if current_branch:
         _save_branch_session(current_branch)
@@ -258,6 +389,7 @@ def leaf_checkout(branch_name):
     _restore_branch_session(branch_name, files)
     get_head_module().write_head(VCS_DIR, target or "")
     get_head_module().write_current_branch(VCS_DIR, branch_name)
+    clear_index()
     print(f"{TREE} Switched to branch {branch_name}")
 
 
@@ -273,34 +405,388 @@ def _has_session_changes(branch):
 def _resolve_session_before_sensitive(branch):
     if not _has_session_changes(branch):
         return True
-    print(f"{HERB} Branch '{branch}' has unresolved session changes.")
-    print("Choose: [c]ommit session / [d]iscard session / [x]cancel")
-    choice = input("> ").strip().lower()
-    sessions = load_sessions()
-    if choice.startswith("c"):
-        saved = sessions.get(branch, {})
-        write_working_tree(saved)
-        print(f"{SPROUT} Session restored. Run 'leaf save <message>' to commit these changes, then retry merge.")
-        return False
-    if choice.startswith("d"):
-        if branch in sessions:
-            del sessions[branch]
-            save_sessions(sessions)
-        print(f"{DRY} Discarded saved session for branch '{branch}'")
-        return True
-    print(f"{DRY} Merge cancelled")
+    print(f"{DRY} Branch '{branch}' has unresolved session changes; checkout and save/discard them first")
     return False
 
 
+def _working_tree_clean_for(commit_id, log):
+    expected = leaf_rebuild(commit_id, log) if commit_id else {}
+    return not _has_uncommitted_changes(_current_working_state(), expected)
+
+
+def _file_has_conflict_markers(path):
+    if not os.path.exists(path):
+        return False
+    text = "".join(leaf_read_file(path))
+    return "<<<<<<<" in text or "=======" in text or ">>>>>>>" in text
+
+
+def _merge_file(path, base, current, source):
+    if current == source:
+        return current, False
+    if current == base:
+        return source, False
+    if source == base:
+        return current, False
+    result = [
+        "<<<<<<< current\n",
+        *current,
+        "=======\n",
+        *source,
+        ">>>>>>> source\n",
+    ]
+    return result, True
+
+
+def _three_way_merge(base_state, current_state, source_state):
+    merged = {}
+    conflicts = []
+    for path in sorted(set(base_state) | set(current_state) | set(source_state)):
+        base = base_state.get(path)
+        current = current_state.get(path)
+        source = source_state.get(path)
+        if current is None and source is None:
+            continue
+        if current is None:
+            if source == base:
+                continue
+            if base is None:
+                merged[path] = source
+            else:
+                content, conflict = _merge_file(path, base or [], [], source or [])
+                merged[path] = content
+                if conflict:
+                    conflicts.append(path)
+            continue
+        if source is None:
+            if current == base:
+                continue
+            content, conflict = _merge_file(path, base or [], current or [], [])
+            merged[path] = content
+            if conflict:
+                conflicts.append(path)
+            continue
+        content, conflict = _merge_file(path, base or [], current or [], source or [])
+        merged[path] = content
+        if conflict:
+            conflicts.append(path)
+    return merged, conflicts
+
+
 def leaf_merge(source_branch):
-    branches = load_branches(); current_branch = get_head_module().read_current_branch(VCS_DIR)
-    if source_branch not in branches: print(f"{DRY} Unknown branch: {source_branch}"); return
-    if not current_branch: print(f"{DRY} Merge requires being on a branch"); return
-    if source_branch == current_branch: print(f"{HERB} Already on {source_branch}"); return
+    if source_branch == "--continue":
+        leaf_merge_continue()
+        return
+    if source_branch == "--abort":
+        leaf_merge_abort()
+        return
+    branches = load_branches()
+    current_branch = get_head_module().read_current_branch(VCS_DIR)
+    if source_branch not in branches:
+        print(f"{DRY} Unknown branch: {source_branch}")
+        return
+    if not current_branch:
+        print(f"{DRY} Merge requires being on a branch")
+        return
+    if source_branch == current_branch:
+        print(f"{HERB} Already on {source_branch}")
+        return
+    if load_merge_state():
+        print(f"{DRY} Merge already in progress")
+        return
+    if load_index():
+        print(f"{DRY} Commit or reset staged changes before merging")
+        return
     if not _resolve_session_before_sensitive(source_branch):
         return
-    log = safe_load_log(); cmap = commit_map(log); target, source = branches.get(current_branch), branches.get(source_branch)
-    if not source or target == source or is_ancestor(source, target, cmap): print(f"{HERB} Already up to date"); return
-    if not is_ancestor(target, source, cmap): print(f"{DRY} Non fast-forward merge not supported yet"); return
-    write_working_tree(leaf_rebuild(source, log) or {}); branches[current_branch] = source; save_branches(branches); get_head_module().write_head(VCS_DIR, source)
-    print(f"{TREE} Fast-forward merged {source_branch} into {current_branch}")
+    log = safe_load_log()
+    cmap = commit_map(log)
+    target, source = branches.get(current_branch), branches.get(source_branch)
+    if not source or target == source or is_ancestor(source, target, cmap):
+        print(f"{HERB} Already up to date")
+        return
+    if not _working_tree_clean_for(target, log):
+        print(f"{DRY} Working tree has uncommitted changes; save, reset, or checkout before merging")
+        return
+    if is_ancestor(target, source, cmap):
+        write_working_tree(leaf_rebuild(source, log) or {})
+        branches[current_branch] = source
+        save_branches(branches)
+        get_head_module().write_head(VCS_DIR, source)
+        print(f"{TREE} Fast-forward merged {source_branch} into {current_branch}")
+        return
+    base = find_merge_base(target, source, cmap)
+    if not base:
+        print(f"{DRY} No merge base found")
+        return
+    merged, conflicts = _three_way_merge(leaf_rebuild(base, log), leaf_rebuild(target, log), leaf_rebuild(source, log))
+    write_working_tree(merged)
+    state = {
+        "current_branch": current_branch,
+        "source_branch": source_branch,
+        "base": base,
+        "target": target,
+        "source": source,
+        "conflicts": conflicts,
+    }
+    save_merge_state(state)
+    if conflicts:
+        print(f"{DRY} Merge has conflicts: {', '.join(conflicts)}")
+        print(f"{HERB} Resolve conflicts, then run 'leaf merge --continue' or 'leaf save <message>'")
+        return
+    commit_id = _create_commit(f"Merge branch '{source_branch}' into {current_branch}", target_state=merged, parents=[target, source], merge=True)
+    clear_merge_state()
+    print(f"{TREE} Merged {source_branch} into {current_branch} with commit {commit_id}")
+
+
+def leaf_merge_continue():
+    state = load_merge_state()
+    if not state:
+        print(f"{DRY} No merge in progress")
+        return
+    unresolved = [path for path in state.get("conflicts", []) if _file_has_conflict_markers(path)]
+    if unresolved:
+        print(f"{DRY} Resolve conflicts first: {', '.join(unresolved)}")
+        return
+    commit_id = _create_commit(
+        f"Merge branch '{state.get('source_branch')}' into {state.get('current_branch')}",
+        target_state=_current_working_state(),
+        parents=[state.get("target"), state.get("source")],
+        merge=True,
+    )
+    clear_merge_state()
+    print(f"{TREE} Merge completed with commit {commit_id}")
+
+
+def leaf_merge_abort():
+    state = load_merge_state()
+    if not state:
+        print(f"{DRY} No merge in progress")
+        return
+    write_working_tree(leaf_rebuild(state.get("target"), safe_load_log()) or {})
+    clear_merge_state()
+    print(f"{TREE} Merge aborted")
+
+
+def leaf_add(path):
+    if not path:
+        print(f"{DRY} Missing path")
+        return
+    index = load_index()
+    paths = leaf_get_all_files() if path == "." else [path]
+    added = 0
+    for item in paths:
+        if os.path.exists(item) and not is_binary(item):
+            index[item] = {"deleted": False, "content": leaf_read_file(item)}
+            added += 1
+        elif not os.path.exists(item):
+            index[item] = {"deleted": True, "content": []}
+            added += 1
+    save_index(index)
+    print(f"{SPROUT} Staged {added} path(s)")
+
+
+def leaf_reset(arg=None, commit_id=None):
+    if arg in {"--hard", "--soft"}:
+        target = commit_id or leaf_get_head_commit_id()
+        if target not in [c["id"] for c in safe_load_log()]:
+            print(f"{DRY} Invalid commit id")
+            return
+        branches = load_branches()
+        branch = get_head_module().read_current_branch(VCS_DIR)
+        if branch:
+            branches[branch] = target
+            save_branches(branches)
+        get_head_module().write_head(VCS_DIR, target)
+        clear_index()
+        clear_merge_state()
+        if arg == "--hard":
+            write_working_tree(leaf_rebuild(target, safe_load_log()))
+        print(f"{TREE} Reset {arg} to {target}")
+        return
+    if arg:
+        index = load_index()
+        if arg in index:
+            index.pop(arg)
+            save_index(index)
+            print(f"{DRY} Unstaged {arg}")
+        else:
+            print(f"{HERB} Nothing staged for {arg}")
+        return
+    clear_index()
+    print(f"{DRY} Cleared staging area")
+
+
+def leaf_revert(commit_id):
+    log = safe_load_log()
+    cmap = commit_map(log)
+    if commit_id not in cmap:
+        print(f"{DRY} Invalid commit id")
+        return
+    head_id = leaf_get_head_commit_id(log)
+    if not _working_tree_clean_for(head_id, log):
+        print(f"{DRY} Working tree has uncommitted changes")
+        return
+    commit = cmap[commit_id]
+    parent = commit.get("parent")
+    before = leaf_rebuild(parent, log) if parent else {}
+    after = leaf_rebuild(commit_id, log)
+    current = leaf_rebuild(head_id, log) if head_id else {}
+    for path in set(before) | set(after):
+        if before.get(path) == after.get(path):
+            continue
+        if path in before:
+            current[path] = before[path]
+        else:
+            current.pop(path, None)
+    write_working_tree(current)
+    new_id = _create_commit(f"Revert {commit_id}", target_state=current)
+    print(f"{TREE} Reverted {commit_id} with commit {new_id}")
+
+
+def leaf_tag(name=None, commit_id=None):
+    tags = load_tags()
+    if name is None:
+        for tag, cid in sorted(tags.items()):
+            print(f"{tag} {cid}")
+        return
+    target = commit_id or leaf_get_head_commit_id()
+    if target not in [c["id"] for c in safe_load_log()]:
+        print(f"{DRY} Invalid commit id")
+        return
+    tags[name] = target
+    save_tags(tags)
+    print(f"{SPROUT} Tagged {target} as {name}")
+
+
+def leaf_fsck():
+    ok = True
+    log = safe_load_log()
+    ids = {c["id"] for c in log}
+    for c in log:
+        if not os.path.isdir(os.path.join(COMMITS_DIR, c["id"])):
+            print(f"{RED}Missing commit directory: {c['id']}{RESET}")
+            ok = False
+        for parent in c.get("parents") or ([c.get("parent")] if c.get("parent") else []):
+            if parent and parent not in ids:
+                print(f"{RED}Missing parent {parent} for {c['id']}{RESET}")
+                ok = False
+    for branch, cid in load_branches().items():
+        if cid and cid not in ids:
+            print(f"{RED}Branch {branch} points to missing commit {cid}{RESET}")
+            ok = False
+    for tag, cid in load_tags().items():
+        if cid and cid not in ids:
+            print(f"{RED}Tag {tag} points to missing commit {cid}{RESET}")
+            ok = False
+    print(f"{TREE} Repository integrity OK" if ok else f"{DRY} Repository integrity issues found")
+
+
+def _repo_leaf_dir(path):
+    return os.path.join(path, ".leaf") if not path.endswith(".leaf") else path
+
+
+# Remote repository command implementations are intentionally disabled.
+# The original code remains below as comments for future review/restoration, but
+# these commands are not executed by the CLI.
+# def leaf_remote(args):
+#     remotes = load_remotes()
+#     if not args:
+#         for name, path in sorted(remotes.items()):
+#             print(f"{name} {path}")
+#         return
+#     if args[0] == "add" and len(args) >= 3:
+#         remotes[args[1]] = os.path.abspath(args[2])
+#         save_remotes(remotes)
+#         print(f"{SPROUT} Added remote {args[1]}")
+#         return
+#     print(f"{DRY} Usage: leaf remote [add <name> <path>]")
+#
+#
+# def _copy_commit_objects(src_leaf, dst_leaf):
+#     src_commits = os.path.join(src_leaf, "commits")
+#     dst_commits = os.path.join(dst_leaf, "commits")
+#     os.makedirs(dst_commits, exist_ok=True)
+#     if not os.path.isdir(src_commits):
+#         return
+#     for cid in os.listdir(src_commits):
+#         src = os.path.join(src_commits, cid)
+#         dst = os.path.join(dst_commits, cid)
+#         if os.path.isdir(src) and not os.path.exists(dst):
+#             shutil.copytree(src, dst)
+#
+#
+# def leaf_fetch(remote_name):
+#     remotes = load_remotes()
+#     if remote_name not in remotes:
+#         print(f"{DRY} Unknown remote: {remote_name}")
+#         return
+#     remote_leaf = _repo_leaf_dir(remotes[remote_name])
+#     if not os.path.isdir(remote_leaf):
+#         print(f"{DRY} Remote is not a Leaf repository")
+#         return
+#     from Modules.storage import _load_json
+#     remote_log = _load_json(os.path.join(remote_leaf, "log.json"), [])
+#     local_log = safe_load_log()
+#     local_ids = {c["id"] for c in local_log}
+#     local_log.extend([c for c in remote_log if c["id"] not in local_ids])
+#     safe_save_log(local_log)
+#     _copy_commit_objects(remote_leaf, VCS_DIR)
+#     remote_branches = _load_json(os.path.join(remote_leaf, "branches.json"), {})
+#     branches = load_branches()
+#     for branch, cid in remote_branches.items():
+#         branches[f"{remote_name}/{branch}"] = cid
+#     save_branches(branches)
+#     print(f"{TREE} Fetched {remote_name}")
+#
+#
+# def leaf_push(remote_name, branch_name):
+#     remotes = load_remotes()
+#     if remote_name not in remotes:
+#         print(f"{DRY} Unknown remote: {remote_name}")
+#         return
+#     remote_path = remotes[remote_name]
+#     remote_leaf = _repo_leaf_dir(remote_path)
+#     os.makedirs(remote_leaf, exist_ok=True)
+#     _copy_commit_objects(VCS_DIR, remote_leaf)
+#     from Modules.storage import _atomic_json_save, _load_json
+#     remote_log = _load_json(os.path.join(remote_leaf, "log.json"), [])
+#     remote_ids = {c["id"] for c in remote_log}
+#     remote_log.extend([c for c in safe_load_log() if c["id"] not in remote_ids])
+#     _atomic_json_save(os.path.join(remote_leaf, "log.json"), remote_log)
+#     remote_branches = _load_json(os.path.join(remote_leaf, "branches.json"), {"main": None})
+#     branches = load_branches()
+#     if branch_name not in branches:
+#         print(f"{DRY} Unknown branch: {branch_name}")
+#         return
+#     remote_branches[branch_name] = branches[branch_name]
+#     _atomic_json_save(os.path.join(remote_leaf, "branches.json"), remote_branches)
+#     print(f"{TREE} Pushed {branch_name} to {remote_name}")
+#
+#
+# def leaf_pull(remote_name, branch_name):
+#     leaf_fetch(remote_name)
+#     leaf_merge(f"{remote_name}/{branch_name}")
+#
+
+def leaf_clone(source, dest=None):
+    dest = dest or os.path.basename(os.path.abspath(source.rstrip(os.sep))) + "-clone"
+    remote_leaf = _repo_leaf_dir(source)
+    if not os.path.isdir(remote_leaf):
+        print(f"{DRY} Source is not a Leaf repository")
+        return
+    os.makedirs(dest, exist_ok=True)
+    shutil.copytree(remote_leaf, os.path.join(dest, ".leaf"), dirs_exist_ok=True)
+    old = os.getcwd()
+    os.chdir(dest)
+    try:
+        from Modules.storage import _load_json
+        branches = _load_json(os.path.join(".leaf", "branches.json"), {"main": None})
+        target = branches.get("main") or next((cid for cid in branches.values() if cid), None)
+        write_working_tree(leaf_rebuild(target, safe_load_log()) if target else {})
+        get_head_module().init_head(VCS_DIR)
+        get_head_module().write_head(VCS_DIR, target or "")
+        get_head_module().write_current_branch(VCS_DIR, "main" if "main" in branches else "")
+    finally:
+        os.chdir(old)
+    print(f"{TREE} Cloned {source} into {dest}")
