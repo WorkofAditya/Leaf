@@ -7,16 +7,17 @@ from Modules.commands import (
     leaf_checkout,
     leaf_clone,
     leaf_diff,
-    leaf_fetch,
+    # Remote repository commands are intentionally disabled.
+    # leaf_fetch,
     leaf_fsck,
     leaf_help,
     leaf_ignore,
     leaf_init,
     leaf_log,
     leaf_merge,
-    leaf_pull,
-    leaf_push,
-    leaf_remote,
+    # leaf_pull,
+    # leaf_push,
+    # leaf_remote,
     leaf_reset,
     leaf_restore,
     leaf_revert,
@@ -78,23 +79,26 @@ def main():
         leaf_merge(sys.argv[2])
     elif cmd == "tag":
         leaf_tag(sys.argv[2] if len(sys.argv) > 2 else None, sys.argv[3] if len(sys.argv) > 3 else None)
-    elif cmd == "remote":
-        leaf_remote(sys.argv[2:])
-    elif cmd == "fetch":
-        if len(sys.argv) < 3:
-            print("🍂 Missing remote name")
-            return
-        leaf_fetch(sys.argv[2])
-    elif cmd == "pull":
-        if len(sys.argv) < 4:
-            print("🍂 Usage: leaf pull <remote> <branch>")
-            return
-        leaf_pull(sys.argv[2], sys.argv[3])
-    elif cmd == "push":
-        if len(sys.argv) < 4:
-            print("🍂 Usage: leaf push <remote> <branch>")
-            return
-        leaf_push(sys.argv[2], sys.argv[3])
+    # Remote repository commands are intentionally disabled.
+    # elif cmd == "remote":
+    #     leaf_remote(sys.argv[2:])
+    # elif cmd == "fetch":
+    #     if len(sys.argv) < 3:
+    #         print("🍂 Missing remote name")
+    #         return
+    #     leaf_fetch(sys.argv[2])
+    # elif cmd == "pull":
+    #     if len(sys.argv) < 4:
+    #         print("🍂 Usage: leaf pull <remote> <branch>")
+    #         return
+    #     leaf_pull(sys.argv[2], sys.argv[3])
+    # elif cmd == "push":
+    #     if len(sys.argv) < 4:
+    #         print("🍂 Usage: leaf push <remote> <branch>")
+    #         return
+    #     leaf_push(sys.argv[2], sys.argv[3])
+    elif cmd in {"remote", "fetch", "pull", "push"}:
+        print("🍂 Remote repository commands are currently disabled")
     elif cmd == "clone":
         if len(sys.argv) < 3:
             print("🍂 Missing source path")

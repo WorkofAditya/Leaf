@@ -192,7 +192,7 @@ def test_ignore_diff_and_sessions(tmp_path):
     assert (repo / "tracked.txt").read_text() == "session\n"
 
 
-def test_remote_fetch_push_pull_clone(tmp_path):
+def test_remote_commands_are_disabled_and_clone_still_works(tmp_path):
     remote = tmp_path / "remote"
     local = tmp_path / "local"
     remote.mkdir()
@@ -202,18 +202,26 @@ def test_remote_fetch_push_pull_clone(tmp_path):
     run_leaf(remote, "save", "remote initial")
 
     run_leaf(local, "init")
-    run_leaf(local, "remote", "add", "origin", str(remote))
-    run_leaf(local, "fetch", "origin")
-    assert "origin/main" in json.loads((local / ".leaf" / "branches.json").read_text())
-    run_leaf(local, "merge", "origin/main")
-    assert (local / "a.txt").read_text() == "remote\n"
-    (local / "a.txt").write_text("local\n")
-    run_leaf(local, "save", "local change")
-    run_leaf(local, "push", "origin", "main")
-    remote_branches = json.loads((remote / ".leaf" / "branches.json").read_text())
-    local_branches = json.loads((local / ".leaf" / "branches.json").read_text())
-    assert remote_branches["main"] == local_branches["main"]
+    for args in [
+        ("remote", "add", "origin", str(remote)),
+        ("fetch", "origin"),
+        ("pull", "origin", "main"),
+        ("push", "origin", "main"),
+    ]:
+        out = run_leaf(local, *args).stdout
+        assert "Remote repository commands are currently disabled" in out
+
+    assert "origin/main" not in json.loads((local / ".leaf" / "branches.json").read_text())
 
     clone_dest = tmp_path / "clone"
     run_leaf(tmp_path, "clone", str(remote), str(clone_dest))
-    assert (clone_dest / "a.txt").read_text() == "local\n"
+    assert (clone_dest / "a.txt").read_text() == "remote\n"
+
+
+def test_help_includes_command_descriptions_and_disabled_remote_notice(tmp_path):
+    result = run_leaf(tmp_path, "help")
+    assert "DESCRIPTION:" in result.stdout
+    assert "Create a new Leaf repository" in result.stdout
+    assert "Usage:" in result.stdout
+    assert "DISABLED REMOTE COMMANDS:" in result.stdout
+    assert "Remote synchronization commands are currently disabled" in result.stdout
