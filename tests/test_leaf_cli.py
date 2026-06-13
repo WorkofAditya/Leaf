@@ -1,11 +1,66 @@
 import json
 import os
+import re
 import shutil
 import subprocess
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[1]
 LEAF = ROOT / "leaf"
+GREEN = "\033[92m"
+RED = "\033[91m"
+RESET = "\033[0m"
+ANSI_RE = re.compile(r"\x1b\[[0-9;]*m")
+ERROR_MARKERS = (
+    "🍂",
+    "error",
+    "failed",
+    "invalid",
+    "missing",
+    "unknown",
+    "cannot",
+    "issues",
+    "not a",
+    "not found",
+)
+VERBOSE = os.environ.get("LEAF_TEST_VERBOSE") == "1"
+
+
+def strip_ansi(text):
+    return ANSI_RE.sub("", text)
+
+
+def line_color(line):
+    lowered = line.lower()
+    if any(marker in lowered for marker in ERROR_MARKERS):
+        return RED
+    return GREEN
+
+
+def print_colored_lines(text, default_color=GREEN):
+    clean = strip_ansi(text).rstrip()
+    if not clean:
+        print(colorize("<no stdout>", default_color), flush=True)
+        return
+    for line in clean.splitlines():
+        print(colorize(line, line_color(line)), flush=True)
+
+
+def colorize(text, color):
+    if not text:
+        return ""
+    return f"{color}{text}{RESET}"
+
+
+def print_live_result(cwd, args, result):
+    command = " ".join([str(LEAF), *args])
+    print(colorize(f"\n$ {command}  # cwd={cwd}", GREEN), flush=True)
+    print_colored_lines(result.stdout, GREEN)
+    if result.stderr:
+        clean_stderr = strip_ansi(result.stderr).rstrip()
+        print(colorize(clean_stderr, RED), flush=True)
+    if result.returncode != 0:
+        print(colorize(f"exit code: {result.returncode}", RED), flush=True)
 
 
 def run_leaf(cwd, *args, check=True):
@@ -19,7 +74,11 @@ def run_leaf(cwd, *args, check=True):
         stderr=subprocess.PIPE,
         env=env,
     )
+    if VERBOSE:
+        print_live_result(cwd, args, result)
     if check and result.returncode != 0:
+        if not VERBOSE:
+            print_live_result(cwd, args, result)
         raise AssertionError(f"leaf {' '.join(args)} failed\nSTDOUT:\n{result.stdout}\nSTDERR:\n{result.stderr}")
     return result
 
@@ -335,3 +394,14 @@ def test_fsck_reports_corrupt_references(tmp_path):
     assert "Branch broken points to missing commit" in out
     assert "Tag badtag points to missing commit" in out
     assert "Repository integrity issues found" in out
+
+
+def main():
+    os.environ["LEAF_TEST_VERBOSE"] = "1"
+    import pytest
+
+    raise SystemExit(pytest.main(["-vv", "-s", "--color=yes", str(Path(__file__).resolve())]))
+
+
+if __name__ == "__main__":
+    main()
