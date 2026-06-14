@@ -1,79 +1,181 @@
 <div align="center">
-  <a href="">
-   <img width="150" height="150" alt="Untitled_design_2_-removebg-preview" src="https://github.com/user-attachments/assets/b3de9948-ad0c-4a68-9e2c-efb8a77bfb8f" />
-
+  <a href="https://github.com/WorkofAditya/Leaf">
+    <img width="150" height="150" alt="Leaf logo" src="https://github.com/user-attachments/assets/b3de9948-ad0c-4a68-9e2c-efb8a77bfb8f" />
   </a>
- 
+
   # _Preserve it,_ with [Leaf](https://github.com/WorkofAditya/Leaf)
 
   <p>
-    Every change leaves a <strong><i>mark</i></strong>
-    <br>
-    Leaf remembers what you don’t.
-    <br> 
+    Every change leaves a <strong><i>mark</i></strong>.<br>
+    Leaf remembers what you don’t.<br>
     <b>Developed by <a href="https://github.com/WorkofAditya/">Adityasinh</a></b>
-    <br>
-    <br>
+  </p>
+
+  <p>
     <a href="https://github.com/WorkofAditya/Leaf/issues">Report a bug</a>
-    <br />
-    <a href="https://github.com/WorkofAditya/Leaf/issues">Request feature</a>
+    ·
+    <a href="https://github.com/WorkofAditya/Leaf/issues">Request a feature</a>
   </p>
 </div>
-<br>
 
-Leaf is a lightweight version control system built to preserve file history in a simple and readable way.
-Instead of trying to compete with Git in complexity, Leaf focuses on clarity. Every save creates a visible trail of changes, making it easier to understand what happened inside a project over time.
-Leaf works by storing:
- * Snapshots of files
- * Line-by-line differences
- * Branch references
- * Rebuildable history
-The project is designed around one idea:
+---
+
+## Overview
+
+Leaf is a lightweight, educational version control system for preserving file history in a simple and readable format. It is not designed to compete with Git’s distributed feature set. Instead, Leaf focuses on making the mechanics of version control easy to inspect, understand, and rebuild.
+
+Leaf tracks a project by combining:
+
+- **Snapshots** for the first complete repository state.
+- **Line-based diffs** for later commits.
+- **Branch pointers** for named lines of development.
+- **HEAD state** for the currently checked-out commit or branch.
+- **Rebuild logic** that reconstructs files from saved history.
+
 > **Every change leaves a mark.**
-## How Leaf Thinks
-Leaf treats a project like a growing tree.
- * **A repository** is the tree.
- * **Commits** are branches and leaves.
- * **History** is the growth record.
- * **HEAD** is the current position on the tree.
-Instead of storing full copies every time, Leaf stores only the changed lines after the first snapshot commit. That makes history smaller and easier to rebuild.
-## Core Workflow
-**Initialize a repository:**
+
+## Mental Model
+
+Leaf treats a repository like a growing tree:
+
+| Concept | Meaning in Leaf |
+| --- | --- |
+| Repository | The tree that contains tracked project history. |
+| Commit | A saved mark in time. |
+| Branch | A named pointer to a commit. |
+| HEAD | The current position in history. |
+| Rebuild | The process of recreating files from stored commits. |
+
+The first commit stores a full snapshot. Later commits store differences against their parent commit. When Leaf restores, diffs, merges, or checks status, it rebuilds commit state from history and compares that state with the working tree.
+
+## Quick Start
+
+```bash
+# Create a Leaf repository in the current directory
+leaf init
+
+# Save the current project state
+leaf save "initial setup"
+
+# Inspect history on the current branch or detached HEAD
+leaf log
+
+# View changes between the working tree and HEAD
+leaf diff
+```
+
+## Common Workflow
+
+### 1. Initialize a repository
+
 ```bash
 leaf init
 ```
-**Save changes:**
+
+This creates the `.leaf/` directory, initializes storage files, creates the default `main` branch, and attaches `HEAD` to `main`.
+
+### 2. Stage selected files, or commit everything
+
 ```bash
-leaf save "initial setup"
+leaf add src/app.py
+leaf save "update app entry point"
 ```
-**View current history:**
+
+If files are staged, `leaf save` commits the staged index. If nothing is staged, it commits the current working state.
+
+### 3. Check project status
+
 ```bash
-leaf log
+leaf status
 ```
-`leaf log` follows the current branch or detached HEAD ancestry instead of printing unrelated commits from every branch.
-**Restore a commit:**
+
+Status compares the working tree with the rebuilt HEAD state and reports staged, added, modified, deleted, and merge-conflict files.
+
+### 4. Create and switch branches
+
+```bash
+leaf branch feature-ui
+leaf checkout feature-ui
+```
+
+Branch checkout saves unresolved working changes for the branch as a session, restores the target branch state, updates `HEAD`, and clears the staging index.
+
+### 5. Restore a specific commit
+
 ```bash
 leaf restore <commit-id>
 ```
-Restoring a commit checks out that commit in detached HEAD mode, so existing branch pointers stay unchanged until you explicitly checkout or create a branch.
-**Create branches:**
-```bash
-leaf branch feature-ui
-```
-**Switch branches:**
-```bash
-leaf checkout feature-ui
-```
-## Repository Structure
+
+Restore writes the selected commit to the working tree and enters **detached HEAD** mode. Existing branch pointers are not moved.
+
+## Command Reference
+
+| Command | Purpose |
+| --- | --- |
+| `leaf init` | Create a repository. |
+| `leaf clone <path> [dest]` | Clone a local Leaf repository. |
+| `leaf add <path>` | Stage a file, deleted path, or `.` for all files. |
+| `leaf save <message>` | Create a commit. |
+| `leaf status` | Show staged and working-tree changes. |
+| `leaf diff [commit]` | Compare the working tree with a commit. Defaults to HEAD. |
+| `leaf log` | Show ancestry for the current branch or detached HEAD. |
+| `leaf restore <commit>` | Restore a commit and detach HEAD. |
+| `leaf reset <path>` | Unstage a path. |
+| `leaf reset --soft <commit>` | Move HEAD or the current branch pointer without rewriting files. |
+| `leaf reset --hard <commit>` | Move HEAD or the current branch pointer and rewrite files. |
+| `leaf branch [name] [commit]` | List branches or create a branch at HEAD or a commit. |
+| `leaf checkout <branch>` | Switch to a branch. |
+| `leaf merge <branch>` | Merge another branch into the current branch. |
+| `leaf merge --continue` | Complete a conflicted merge after markers are resolved. |
+| `leaf merge --abort` | Cancel a merge and restore the target branch state. |
+| `leaf revert <commit>` | Create a new commit that reverses another commit. |
+| `leaf tag [name] [commit]` | List tags or create a lightweight tag. |
+| `leaf ignore <path>` | Add an ignore pattern to `.leafignore`. |
+| `leaf fsck` | Validate repository integrity. |
+| `leaf version` | Fetch and print the remote version file. |
+| `leaf help` | Print CLI help. |
+
+Remote-style commands (`remote`, `fetch`, `pull`, and `push`) are currently disabled in the CLI.
+
+## Repository Layout
+
 ```text
 .leaf/
-├── commits/       # Stores commit data.
-├── log.json       # Stores commit history and metadata.
-├── branches.json  # Tracks branch pointers.
-├── sessions.json  # Stores temporary branch states.
-├── HEAD           # Stores the detached/current commit id.
-└── CURRENT_BRANCH # Stores the active branch name, or empty when detached.
+├── commits/             # Commit object directories.
+│   └── <commit-id>/     # Snapshot files or diff/state data for one commit.
+├── log.json             # Ordered commit metadata.
+├── log.bak              # Backup of the previous log file.
+├── branches.json        # Branch name -> commit ID map.
+├── sessions.json        # Unsaved branch working states preserved across checkout.
+├── index.json           # Staging area.
+├── tags.json            # Lightweight tag name -> commit ID map.
+├── MERGE_STATE.json     # In-progress merge metadata.
+├── remotes.json         # Reserved local remote configuration storage.
+├── HEAD                 # Current commit ID.
+└── CURRENT_BRANCH       # Active branch name, or empty in detached HEAD mode.
 ```
-## Why Leaf Exists
-Leaf was built to make version control easier to understand. Most version control systems hide their internal behavior behind complicated commands and layers of abstraction.
-Leaf exposes the process in a more human-readable way. You can follow how commits are stored, rebuilt, restored, and connected without needing deep knowledge of distributed systems.
+
+## Documentation Map
+
+Detailed internal documentation lives in [`docs/`](docs/main.md):
+
+- [`docs/main.md`](docs/main.md) — project overview and system flow.
+- [`docs/command.md`](docs/command.md) — command engine and workflows.
+- [`docs/storage.md`](docs/storage.md) — JSON persistence layer.
+- [`docs/rebuild.md`](docs/rebuild.md) — history reconstruction.
+- [`docs/HEAD.md`](docs/HEAD.md) — HEAD and branch attachment behavior.
+- [`docs/files.md`](docs/files.md) — file discovery, ignore rules, snapshots.
+- [`docs/graph.md`](docs/graph.md) — commit ancestry and merge-base helpers.
+- [`docs/core.md`](docs/core.md) — shared commit and state helpers.
+- [`docs/common.md`](docs/common.md) — constants, paths, symbols, colors.
+- [`docs/head_utils.md`](docs/head_utils.md) — dynamic loader for the top-level `HEAD` module.
+- [`docs/leaf.md`](docs/leaf.md) — CLI entry point.
+
+## Development Notes
+
+- Leaf is implemented in Python.
+- The executable CLI is the top-level `leaf` file.
+- Most behavior lives in `Modules/commands.py`.
+- Repository data is stored as readable JSON plus commit directories.
+- Binary files are skipped for diff generation.
+- The project intentionally favors transparency over advanced VCS features.

@@ -1,57 +1,104 @@
-# Leaf
-Leaf is a lightweight version control system built to preserve file history in a simple and readable way.
-Instead of trying to compete with Git in complexity, Leaf focuses on clarity. Every save creates a visible trail of changes, making it easier to understand what happened inside a project over time.
-Leaf works by storing:
- * Snapshots of files
- * Line-by-line differences
- * Branch references
- * Rebuildable history
-The project is designed around one idea:
-> **Every change leaves a mark.**
-## How Leaf Thinks
-Leaf treats a project like a growing tree.
- * **A repository** is the tree.
- * **Commits** are branches and leaves.
- * **History** is the growth record.
- * **HEAD** is the current position on the tree.
-Instead of storing full copies every time, Leaf stores only the changed lines after the first snapshot commit. That makes history smaller and easier to rebuild.
-## Core Workflow
-**Initialize a repository:**
+# Leaf Documentation
+
+## Purpose
+
+Leaf is a compact version control system designed to make repository history easy to see, explain, and rebuild. It stores project changes inside a `.leaf/` directory using readable JSON files and commit directories.
+
+Leaf’s goal is clarity: users should be able to understand how commits, branches, staging, restore, merge, and repository rebuilding work without needing to learn a large distributed VCS implementation first.
+
+## How Leaf Stores History
+
+Leaf stores history in two phases:
+
+1. **Initial snapshot** — the first commit records the full contents of every tracked text file.
+2. **Diff commits** — later commits store line-based differences and deleted-file metadata relative to their parent commit.
+
+When Leaf needs a commit’s full file state, it rebuilds that state from the initial snapshot through the commit’s first-parent ancestry.
+
+## Core Concepts
+
+| Concept | Description |
+| --- | --- |
+| Working tree | The files currently present in the project directory. |
+| Commit | A saved state transition with metadata, parent links, and stored file data. |
+| Snapshot commit | The first commit, containing complete files. |
+| Diff commit | A later commit, containing line-based changes and deletions. |
+| Branch | A named pointer stored in `.leaf/branches.json`. |
+| HEAD | The currently checked-out commit ID stored in `.leaf/HEAD`. |
+| Current branch | The active branch name stored in `.leaf/CURRENT_BRANCH`. |
+| Detached HEAD | A state where `CURRENT_BRANCH` is empty and `HEAD` directly identifies the current commit. |
+| Index | The staging area stored in `.leaf/index.json`. |
+| Merge state | Temporary metadata for an in-progress merge. |
+
+## Main Data Flow
+
+```text
+Working tree
+    │
+    ├── leaf add ───────────────► .leaf/index.json
+    │                                  │
+    └── leaf save ─────────────────────┘
+             │
+             ▼
+      commit metadata + stored data
+             │
+             ├── .leaf/log.json
+             ├── .leaf/commits/<id>/
+             └── branch + HEAD updates
+```
+
+## Typical Lifecycle
+
 ```bash
 leaf init
-```
-**Save changes:**
-```bash
-leaf save "initial setup"
-```
-**View current history:**
-```bash
+leaf add .
+leaf save "initial snapshot"
+leaf branch feature
+leaf checkout feature
+leaf save "feature work"
+leaf checkout main
+leaf merge feature
 leaf log
 ```
-`leaf log` follows the current branch or detached HEAD ancestry instead of printing unrelated commits from every branch.
-**Restore a commit:**
-```bash
-leaf restore <commit-id>
-```
-Restoring a commit checks out that commit in detached HEAD mode, so existing branch pointers stay unchanged until you explicitly checkout or create a branch.
-**Create branches:**
-```bash
-leaf branch feature-ui
-```
-**Switch branches:**
-```bash
-leaf checkout feature-ui
-```
-## Repository Structure
+
+This lifecycle demonstrates Leaf’s most important systems: initialization, staging, committing, branch switching, merging, and history traversal.
+
+## Internal Modules
+
+| Module | Responsibility |
+| --- | --- |
+| `leaf` | Parses command-line arguments and dispatches commands. |
+| `Modules/commands.py` | Implements repository commands and most user-facing behavior. |
+| `Modules/storage.py` | Reads and writes JSON storage files safely. |
+| `Modules/rebuild.py` | Reconstructs file states from commits. |
+| `Modules/files.py` | Discovers, reads, writes, ignores, and snapshots files. |
+| `Modules/graph.py` | Traverses commit ancestry and finds merge bases. |
+| `Modules/core.py` | Provides commit hash and current-state helpers. |
+| `HEAD` | Manages `.leaf/HEAD` and `.leaf/CURRENT_BRANCH`. |
+| `Modules/head_utils.py` | Dynamically loads the top-level `HEAD` module. |
+| `Modules/common.py` | Defines paths, symbols, and terminal colors. |
+
+## Repository Directory
+
 ```text
 .leaf/
-├── commits/       # Stores commit data.
-├── log.json       # Stores commit history and metadata.
-├── branches.json  # Tracks branch pointers.
-├── sessions.json  # Stores temporary branch states.
-├── HEAD           # Stores the detached/current commit id.
-└── CURRENT_BRANCH # Stores the active branch name, or empty when detached.
+├── commits/
+├── log.json
+├── log.bak
+├── branches.json
+├── sessions.json
+├── index.json
+├── tags.json
+├── MERGE_STATE.json
+├── remotes.json
+├── HEAD
+└── CURRENT_BRANCH
 ```
-## Why Leaf Exists
-Leaf was built to make version control easier to understand. Most version control systems hide their internal behavior behind complicated commands and layers of abstraction.
-Leaf exposes the process in a more human-readable way. You can follow how commits are stored, rebuilt, restored, and connected without needing deep knowledge of distributed systems.
+
+## Design Principles
+
+- **Readable storage:** JSON files make metadata easy to inspect.
+- **Simple history reconstruction:** rebuild logic is centralized and predictable.
+- **Branch safety:** restoring a commit detaches HEAD rather than silently moving branch pointers.
+- **Small command surface:** commands cover the common version-control lifecycle without hiding too much implementation detail.
+- **Educational implementation:** code is intentionally direct so the system can be studied module by module.
