@@ -22,7 +22,7 @@
 
 ## Overview
 
-Leaf is a lightweight, educational version control system for preserving file history in a simple and readable format. It is not designed to compete with Git’s distributed feature set. Instead, Leaf focuses on making the mechanics of version control easy to inspect, understand, and rebuild.
+Leaf is a lightweight version control system built to preserve file history in a simple and readable way. Instead of trying to compete with Git in complexity, Leaf focuses on clarity. Every save creates a visible trail of changes, making it easier to understand what happened inside a project over time.
 
 Leaf tracks a project by combining:
 
