@@ -1,158 +1,77 @@
 def leaf_help():
-    print("""Leaf Version Control System
+    print("""
+Leaf Version Control System
 
-USAGE:
-    leaf <command> [options]
-    leaf help
-    leaf --help
+Usage:
+  leaf <command> [options]
 
-DESCRIPTION:
-    Leaf is a lightweight local version control system for saving snapshots,
-    reviewing history, managing branches, merging work, and restoring files.
+Commands:
 
-COMMANDS:
-    init
-        Create a new Leaf repository in the current directory.
+  Repository
+    init                 Create a new repository
+    clone <path> [dest]  Clone a local repository
+    fsck                 Verify repository integrity
 
-        Usage:
-            leaf init
+  Changes
+    add <path>           Stage files or directories
+    save <message>       Create a commit
+    status               Show working tree status
+    diff [commit]        Show differences
+    ignore <path>        Ignore files or directories
 
-    save <message>
-        Save tracked working-tree changes as a new commit. If files were staged
-        with `leaf add`, only staged content is saved.
+  History
+    log                  Show commit history
+    restore <commit>     Restore a commit
+    revert <commit>      Revert a commit
+    reset [options]      Move HEAD or unstage files
 
-        Usage:
-            leaf save "describe your change"
+  Branching
+    branch [name]        List or create branches
+    checkout <branch>    Switch branches
+    merge <branch>       Merge branches
 
-    add <path>
-        Stage a file or directory so the next save records only staged changes.
+  Tags
+    tag [name]           List or create tags
 
-        Usage:
-            leaf add <file-or-directory>
+  Information
+    version              Show Leaf version
+    help                 Show this help
 
-    reset [--soft|--hard] [commit]
-        Move the current branch to a commit. Use --soft to keep the working tree
-        unchanged, or --hard to rewrite the working tree to the target commit.
+Reset Options:
+  leaf reset <path>
+      Unstage a file or directory
 
-        Usage:
-            leaf reset [commit]
-            leaf reset --soft <commit>
-            leaf reset --hard <commit>
+  leaf reset <commit>
+      Move HEAD to a commit
 
-    reset <path>
-        Unstage a file or directory from the index.
+  leaf reset --soft <commit>
+      Keep working tree unchanged
 
-        Usage:
-            leaf reset <file-or-directory>
+  leaf reset --hard <commit>
+      Restore files from target commit
 
-    revert <commit_id>
-        Apply a new commit that reverses the changes introduced by a commit.
+Merge Options:
+  leaf merge <branch>
+      Merge a branch
 
-        Usage:
-            leaf revert <commit_id>
+  leaf merge --continue
+      Continue after resolving conflicts
 
-    log
-        Show commit history from HEAD, including messages, timestamps, tags, and
-        merge parents.
+  leaf merge --abort
+      Cancel current merge
 
-        Usage:
-            leaf log
+Aliases:
+  leaf help
+  leaf --help
 
-    restore <commit_id>
-        Restore the working tree to a commit and enter detached HEAD state.
+  leaf version
+  leaf v
+  leaf -v
 
-        Usage:
-            leaf restore <commit_id>
+Remote Commands:
+  remote    Disabled
+  fetch     Disabled
+  pull      Disabled
+  push      Disabled
 
-    status
-        Show staged files, working-tree changes, deletions, and merge conflicts.
-
-        Usage:
-            leaf status
-
-    diff [commit_id]
-        Compare the working tree with a commit. Defaults to HEAD when no commit
-        is provided.
-
-        Usage:
-            leaf diff
-            leaf diff <commit_id>
-
-    ignore <path>
-        Add a file or directory pattern to Leaf's ignore list.
-
-        Usage:
-            leaf ignore <file-or-directory>
-
-    branch [name] [commit]
-        List branches, create a branch at HEAD, or create a branch at a specific
-        commit.
-
-        Usage:
-            leaf branch
-            leaf branch <name>
-            leaf branch <name> <commit_id>
-
-    checkout <branch>
-        Switch to a branch and restore its saved working-tree state.
-
-        Usage:
-            leaf checkout <branch>
-
-    merge <branch>|--continue|--abort
-        Merge another branch into the current branch, continue after resolving
-        conflicts, or abort an in-progress merge.
-
-        Usage:
-            leaf merge <branch>
-            leaf merge --continue
-            leaf merge --abort
-
-    tag [name] [commit]
-        List tags, create a tag at HEAD, or create a tag at a specific commit.
-
-        Usage:
-            leaf tag
-            leaf tag <name>
-            leaf tag <name> <commit_id>
-
-    clone <path> [dest]
-        Copy an existing local Leaf repository into a new destination directory.
-
-        Usage:
-            leaf clone <source-path> [destination]
-
-    fsck
-        Check repository integrity, including commit parent, branch, and tag
-        references.
-
-        Usage:
-            leaf fsck
-
-    version
-        Print the latest available Leaf version.
-
-        Usage:
-            leaf version
-            leaf v
-            leaf -v
-
-DISABLED REMOTE COMMANDS:
-    Remote synchronization commands are currently disabled. Their code remains
-    in the source as comments so it can be reviewed or restored later, but it is
-    not executed by the CLI.
-
-    remote [add <name> <path>]
-        Disabled. Previously listed or added local repository remotes.
-
-    fetch <remote>
-        Disabled. Previously copied commits and remote branch references from a
-        configured remote.
-
-    pull <remote> <branch>
-        Disabled. Previously fetched a remote branch and merged it locally.
-
-    push <remote> <branch>
-        Disabled. Previously copied local commits and a branch pointer to a
-        configured remote.
 """)
