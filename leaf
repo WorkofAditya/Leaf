@@ -10,7 +10,9 @@ from Modules.commands import (
     # Remote repository commands are intentionally disabled.
     # leaf_fetch,
     leaf_fsck,
+    leaf_export_git,
     leaf_ignore,
+    leaf_import_git,
     leaf_init,
     leaf_log,
     leaf_merge,
@@ -104,6 +106,10 @@ def main():
             print("🍂 Missing source path")
             return
         leaf_clone(sys.argv[2], sys.argv[3] if len(sys.argv) > 3 else None)
+    elif cmd == "import-git":
+        leaf_import_git()
+    elif cmd == "export-git":
+        leaf_export_git()
     elif cmd == "fsck":
         leaf_fsck()
     elif cmd in {"help", "-h", "--help"}:

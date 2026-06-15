@@ -10,6 +10,8 @@ Commands:
   Repository
     init                 Create a new repository
     clone <path> [dest]  Clone a local repository
+    import-git           Import an existing .git repository into .leaf
+    export-git           Export an existing .leaf repository into .git
     fsck                 Verify repository integrity
 
   Changes
