@@ -6,6 +6,8 @@ import time
 
 from Modules.common import (
     BRANCHES_FILE,
+    REMOTES_FILE,
+    TAGS_FILE,
     COMMITS_DIR,
     DRY,
     LEAF,
@@ -16,6 +18,20 @@ from Modules.files import is_binary, leaf_read_file
 from Modules.head_utils import get_head_module
 from Modules.rebuild import leaf_rebuild
 from Modules.storage import safe_load_log, safe_save_log, save_branches, save_index, save_remotes, save_sessions, save_tags
+
+
+def _progress(message):
+    print(f"{TREE} {message}", flush=True)
+
+
+def _load_json_file(path, default):
+    try:
+        import json
+        with open(path) as fh:
+            data = json.load(fh)
+        return data if isinstance(data, type(default)) else default
+    except Exception:
+        return default
 
 
 def _run_git(args, cwd=".", input_data=None):
@@ -123,15 +139,18 @@ def leaf_import_git():
     if not os.path.isdir(".git"):
         print(f"{DRY} No .git repository found")
         return
+    _progress("Starting Git import")
     os.makedirs(COMMITS_DIR, exist_ok=True)
 
+    _progress("Reading Git commit graph")
     shas = _run_git(["rev-list", "--topo-order", "--reverse", "--all"]).stdout.splitlines()
     used = set()
     sha_to_leaf = {sha: _leaf_commit_id(sha, used) for sha in shas}
     log = []
     states = {}
-    for sha in shas:
+    for index, sha in enumerate(shas, 1):
         leaf_id = sha_to_leaf[sha]
+        _progress(f"Importing commit {index}/{len(shas)} {sha[:12]} -> {leaf_id}")
         parents = [sha_to_leaf[p] for p in _git_commit_parents(sha) if p in sha_to_leaf]
         parent = parents[0] if parents else None
         state = _git_text_state(sha)
@@ -156,6 +175,7 @@ def leaf_import_git():
         states[leaf_id] = state
         log.append(commit_data)
 
+    _progress("Importing branches")
     branches = {}
     branch_lines = _run_git(["for-each-ref", "--format=%(refname:short) %(objectname)", "refs/heads"]).stdout.splitlines()
     for line in branch_lines:
@@ -165,6 +185,26 @@ def leaf_import_git():
     if not branches:
         branches["main"] = None
 
+    _progress("Importing tags")
+    tags = {}
+    tag_lines = _run_git(["for-each-ref", "--format=%(refname:short) %(objectname) %(objecttype)", "refs/tags"]).stdout.splitlines()
+    for line in tag_lines:
+        name, obj, obj_type = line.split(" ", 2)
+        target_sha = obj
+        if obj_type == "tag":
+            target_sha = _run_git(["rev-list", "-n", "1", obj]).stdout.strip()
+        if target_sha in sha_to_leaf:
+            tags[name] = sha_to_leaf[target_sha]
+
+    _progress("Importing remotes")
+    remotes = {}
+    remote_lines = _run_git(["remote", "-v"]).stdout.splitlines()
+    for line in remote_lines:
+        parts = line.split()
+        if len(parts) >= 3 and parts[2] == "(fetch)":
+            remotes[parts[0]] = parts[1]
+
+    _progress("Preserving HEAD")
     current_branch = _run_git(["branch", "--show-current"]).stdout.strip()
     head_sha = _run_git(["rev-parse", "--verify", "HEAD"]).stdout.strip() if shas else ""
     head_id = sha_to_leaf.get(head_sha, "")
@@ -176,12 +216,12 @@ def leaf_import_git():
     save_branches(branches)
     save_sessions({})
     save_index({})
-    save_tags({})
-    save_remotes({})
+    save_tags(tags)
+    save_remotes(remotes)
     get_head_module().init_head(VCS_DIR)
     get_head_module().write_head(VCS_DIR, head_id)
     get_head_module().write_current_branch(VCS_DIR, current_branch if current_branch in branches else "")
-    print(f"{LEAF} Imported Git repository into .leaf ({len(log)} commits, {len(branches)} branches)")
+    print(f"{LEAF} Imported Git repository into .leaf ({len(log)} commits, {len(branches)} branches, {len(tags)} tags, {len(remotes)} remotes)")
 
 
 def _commit_state(commit):
@@ -215,8 +255,10 @@ def leaf_export_git():
     if os.path.exists(".git"):
         print(f"{DRY} .git already exists; refusing to overwrite it")
         return
+    _progress("Starting Git export")
     log = safe_load_log()
     os.makedirs(".git", exist_ok=False)
+    _progress("Initializing .git repository")
     _run_git(["init", "."])
     if not log:
         print(f"{TREE} Created empty Git repository")
@@ -228,7 +270,8 @@ def leaf_export_git():
     env.setdefault("GIT_COMMITTER_NAME", env["GIT_AUTHOR_NAME"])
     env.setdefault("GIT_COMMITTER_EMAIL", env["GIT_AUTHOR_EMAIL"])
     marks = {}
-    for commit in log:
+    for index, commit in enumerate(log, 1):
+        _progress(f"Exporting commit {index}/{len(log)} {commit['id']}")
         state = _commit_state(commit)
         for path in list(state):
             if path.startswith(".git/") or path == ".git":
@@ -256,16 +299,23 @@ def leaf_export_git():
         new_sha = subprocess.run(["git", *args], text=True, capture_output=True, check=True, env=commit_env).stdout.strip()
         marks[commit["id"]] = new_sha
 
-    branches = {}
-    try:
-        import json
-        with open(BRANCHES_FILE) as fh:
-            branches = json.load(fh)
-    except Exception:
-        branches = {"main": log[-1]["id"]}
+    _progress("Exporting branches")
+    branches = _load_json_file(BRANCHES_FILE, {"main": log[-1]["id"]})
     for branch, leaf_id in branches.items():
         if leaf_id in marks:
             _run_git(["update-ref", f"refs/heads/{_git_ref_name(branch)}", marks[leaf_id]])
+
+    _progress("Exporting tags")
+    tags = _load_json_file(TAGS_FILE, {})
+    for tag, leaf_id in tags.items():
+        if leaf_id in marks:
+            _run_git(["tag", "-f", tag, marks[leaf_id]])
+
+    _progress("Exporting remotes")
+    remotes = _load_json_file(REMOTES_FILE, {})
+    for name, url in remotes.items():
+        _run_git(["remote", "add", name, url])
+    _progress("Restoring HEAD")
     head_branch = get_head_module().read_current_branch(VCS_DIR)
     head_id = get_head_module().read_head(VCS_DIR) or log[-1]["id"]
     if head_branch and branches.get(head_branch) in marks:
@@ -273,5 +323,6 @@ def leaf_export_git():
     elif head_id in marks:
         with open(os.path.join(".git", "HEAD"), "w") as fh:
             fh.write(marks[head_id] + "\n")
+    _progress("Checking out exported HEAD")
     _run_git(["reset", "--hard", "HEAD"])
-    print(f"{LEAF} Exported Leaf repository into .git ({len(log)} commits, {len(branches)} branches)")
+    print(f"{LEAF} Exported Leaf repository into .git ({len(log)} commits, {len(branches)} branches, {len(tags)} tags, {len(remotes)} remotes)")
