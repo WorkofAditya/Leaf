@@ -1,7 +1,8 @@
 <div align="center">
   <a href="https://github.com/WorkofAditya/Leaf">
-    <img width="150" height="150" alt="Leaf logo" src="https://github.com/user-attachments/assets/b3de9948-ad0c-4a68-9e2c-efb8a77bfb8f" />
-  </a>
+  
+<img width="1408" height="768" alt="1000153396" src="https://github.com/user-attachments/assets/69791615-dd89-4994-a8af-bbd77db08559" />
+</a>
 
   # _Preserve it,_ with [Leaf](https://github.com/WorkofAditya/Leaf)
 
