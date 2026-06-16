@@ -34,11 +34,13 @@ def _load_json(path, default):
 
 
 def safe_load_log():
-    data = _load_json(LOG_FILE, [])
-    if data:
-        return data
-    if os.path.exists(LOG_FILE):
-        return data
+    try:
+        with open(LOG_FILE, "r") as f:
+            data = json.load(f)
+        if isinstance(data, list):
+            return data
+    except (OSError, json.JSONDecodeError):
+        pass
     return _load_json(LOG_BACKUP, [])
 
 

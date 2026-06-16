@@ -13,11 +13,14 @@ def leaf_get_head_commit_id(log=None):
     if not log:
         return None
 
+    ids = {c.get("id") for c in log}
     branch = get_head_module().read_current_branch(VCS_DIR)
     if branch:
-        return load_branches().get(branch)
+        branch_head = load_branches().get(branch)
+        return branch_head if branch_head in ids else log[-1].get("id")
 
-    return get_head_module().read_head(VCS_DIR)
+    head = get_head_module().read_head(VCS_DIR)
+    return head if head in ids else log[-1].get("id")
 
 
 def leaf_get_last_state():
