@@ -46,6 +46,15 @@ def run(ctx: TestContext) -> None:
     ctx.check(remotes == {"origin": "https://example.invalid/leaf-test.git"}, "import preserves Git remotes")
     ctx.check(ctx.read(".leaf/CURRENT_BRANCH") == "main", "import preserves current branch")
 
+    # Leaf ignores its installed runtime files (HEAD, leaf, and Modules). A Git
+    # repository can still track files with those names, so importing must not
+    # leave HEAD pointing at a state that status will immediately report as
+    # deleted just because those paths are intentionally ignored by Leaf.
+    status_after_import = ctx.command(["leaf", "status"])
+    ctx.check("Deleted: HEAD" not in status_after_import.stdout, "imported ignored HEAD file is not reported as deleted")
+    ctx.check("Deleted: leaf" not in status_after_import.stdout, "imported ignored leaf executable is not reported as deleted")
+    ctx.check("Deleted: Modules" not in status_after_import.stdout, "imported ignored Modules files are not reported as deleted")
+
     shutil.rmtree(ctx.repo / ".git")
     export_result = ctx.command(["leaf", "export-git"], contains="Exported Leaf repository")
     ctx.check("Exporting commit 1/4" in export_result.stdout, "export prints per-commit progress")

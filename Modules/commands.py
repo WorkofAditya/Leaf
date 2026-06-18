@@ -25,7 +25,7 @@ from Modules.common import (
     VCS_DIR,
 )
 from Modules.core import leaf_get_head_commit_id, leaf_get_last_state, leaf_hash_commit
-from Modules.files import is_binary, leaf_get_all_files, leaf_read_file, leaf_snapshot
+from Modules.files import is_binary, is_ignored_path, leaf_get_all_files, leaf_read_file, leaf_snapshot
 from Modules.graph import commit_chain, commit_map, find_merge_base, is_ancestor
 from Modules.git_interop import leaf_export_git, leaf_import_git
 from Modules.head_utils import get_head_module
@@ -278,6 +278,7 @@ def leaf_status():
         status = "Deleted" if entry.get("deleted") else "Staged"
         print(f"{GREEN}{SPROUT} {status}: {path}{RESET}")
     last = leaf_get_last_state()
+    last = {path: content for path, content in last.items() if not is_ignored_path(path)}
     current = set(leaf_get_all_files())
     last_files = set(last.keys())
     added, deleted, modified = current - last_files, last_files - current, []

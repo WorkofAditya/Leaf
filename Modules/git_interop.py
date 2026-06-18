@@ -14,7 +14,7 @@ from Modules.common import (
     TREE,
     VCS_DIR,
 )
-from Modules.files import is_binary, leaf_read_file
+from Modules.files import is_binary, is_ignored_path, leaf_read_file
 from Modules.head_utils import get_head_module
 from Modules.rebuild import leaf_rebuild
 from Modules.storage import safe_load_log, safe_save_log, save_branches, save_index, save_remotes, save_sessions, save_tags
@@ -89,6 +89,8 @@ def _git_text_state(sha):
     state = {}
     files = _run_git(["ls-tree", "-r", "--name-only", sha]).stdout.splitlines()
     for path in files:
+        if is_ignored_path(path):
+            continue
         try:
             data = _run_git(["show", f"{sha}:{path}"]).stdout
         except (UnicodeDecodeError, subprocess.CalledProcessError):
