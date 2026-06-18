@@ -93,7 +93,12 @@ def run(ctx):
     ctx.check("initial" in recovered_log.stdout or "second" in recovered_log.stdout, "Corrupted log falls back to backup history")
     (source / ".leaf" / "log.json").write_text(original_log_json, encoding="utf-8")
 
-    sys.path.insert(0, str(ctx.script_path.parents[1]))
+    import shutil
+    from pathlib import Path
+
+    leaf_path = shutil.which("leaf")
+    sys.path.insert(0, str(Path(leaf_path).parent))
+
     from Modules import commands
 
     original_urlopen = commands.urllib.request.urlopen
