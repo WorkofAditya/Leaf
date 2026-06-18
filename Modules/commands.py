@@ -27,6 +27,7 @@ from Modules.common import (
 from Modules.core import leaf_get_head_commit_id, leaf_get_last_state, leaf_hash_commit
 from Modules.files import is_binary, leaf_get_all_files, leaf_read_file, leaf_snapshot
 from Modules.graph import commit_chain, commit_map, find_merge_base, is_ancestor
+from Modules.git_interop import leaf_export_git, leaf_import_git
 from Modules.head_utils import get_head_module
 from Modules.rebuild import leaf_rebuild, write_working_tree
 from Modules.storage import (
