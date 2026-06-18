@@ -45,26 +45,32 @@ def load_ignore():
     return ignore
 
 
+def is_ignored_path(path, ignore=None):
+    if ignore is None:
+        ignore = load_ignore()
+
+    normalized = os.path.normpath(path)
+    parts = normalized.split(os.sep)
+    name = os.path.basename(normalized)
+
+    for ig in ignore:
+        if ig.startswith("*.") and name.endswith(ig[1:]):
+            return True
+        if ig in parts:
+            return True
+    return False
+
+
 def leaf_get_all_files():
     ignore = load_ignore()
     files = []
 
     for root, dirs, fs in os.walk("."):
-        dirs[:] = [d for d in dirs if d not in ignore]
+        dirs[:] = [d for d in dirs if not is_ignored_path(d, ignore)]
 
         for f in fs:
             path = os.path.relpath(os.path.join(root, f), ".")
-            ignored = False
-
-            for ig in ignore:
-                if ig.startswith("*.") and f.endswith(ig[1:]):
-                    ignored = True
-                    break
-                if ig in path.split(os.sep):
-                    ignored = True
-                    break
-
-            if not ignored:
+            if not is_ignored_path(path, ignore):
                 files.append(path)
 
     return files
