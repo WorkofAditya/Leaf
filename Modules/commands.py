@@ -207,16 +207,22 @@ def leaf_log():
     tags_by_commit = {}
     for tag, cid in load_tags().items():
         tags_by_commit.setdefault(cid, []).append(tag)
-    for commit_id in commit_chain(head_id, cmap):
+    for index, commit_id in enumerate(commit_chain(head_id, cmap)):
         c = cmap[commit_id]
         marker = " (HEAD)" if c["id"] == head_id else ""
-        tags = f" tags: {', '.join(sorted(tags_by_commit.get(commit_id, [])))}" if tags_by_commit.get(commit_id) else ""
+        tag_names = sorted(tags_by_commit.get(commit_id, []))
+        tags = ""
+        if tag_names:
+            tags = " " + " ".join(f"{GREEN}[{tag}]{RESET}" for tag in tag_names)
         parents = c.get("parents") or ([c.get("parent")] if c.get("parent") else [])
-        print(f"\n{HERB} commit {c['id']}{marker}{tags}")
+
+        if index:
+            print("│")
+        print(f"● {RED}{c['id']}{RESET}{tags}{marker}")
+        print(f"│ {c['message']}")
+        print(f"│ {c['time']}")
         if len(parents) > 1:
-            print(f"{TREE} Merge parents: {' '.join(parents)}")
-        print(f"{LEAF} Message: {c['message']}")
-        print(f"{SPROUT} Time: {c['time']}")
+            print(f"│ Merge parents: {' '.join(parents)}")
 
 
 def leaf_diff(commit_id=None):
