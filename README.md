@@ -115,6 +115,8 @@ Restore writes the selected commit to the working tree and enters **detached HEA
 | --- | --- |
 | `leaf init` | Create a repository. |
 | `leaf clone <path> [dest]` | Clone a local Leaf repository. |
+| `leaf import-git` | Import an existing `.git` repository into Leaf metadata while preserving commits, branches, tags, and remotes. |
+| `leaf export-git` | Export an existing Leaf repository into a `.git` repository while preserving commits, branches, tags, and remotes. |
 | `leaf add <path>` | Stage a file, deleted path, or `.` for all files. |
 | `leaf save <message>` | Create a commit. |
 | `leaf status` | Show staged and working-tree changes. |

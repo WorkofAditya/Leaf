@@ -17,6 +17,8 @@
 - Create tags and revert commits.
 - Validate repository integrity.
 - Clone local Leaf repositories.
+- Import existing Git repositories into Leaf metadata.
+- Export Leaf repositories into Git repositories.
 
 ## Commit Creation Flow
 
@@ -119,6 +121,14 @@ Validates repository integrity by checking that commit directories exist and tha
 ### `leaf_clone(source, dest=None)`
 
 Copies the `.leaf/` directory from a local source repository, rebuilds the default branch into the destination working tree, and initializes HEAD metadata.
+
+### `leaf_import_git()`
+
+Imports an existing `.git` repository into `.leaf` metadata. The importer walks Git commits in topological order, recreates Leaf commit entries, preserves merge parents, stores branches and tags, records remotes, and keeps the original `.git` directory untouched.
+
+### `leaf_export_git()`
+
+Exports an existing `.leaf` repository into a new `.git` repository. The exporter recreates commits, branches, tags, remotes, and the current HEAD checkout, and refuses to overwrite an existing `.git` directory.
 
 ## Disabled Remote Commands
 
