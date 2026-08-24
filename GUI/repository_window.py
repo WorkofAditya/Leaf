@@ -5,6 +5,7 @@ from pathlib import Path
 
 from PySide6.QtCore import QTimer, Qt
 from PySide6.QtWidgets import (
+    QCheckBox,
     QFrame,
     QHBoxLayout,
     QLabel,
@@ -37,28 +38,46 @@ def working_tree_status(repository):
         from Modules.storage import load_index, load_merge_state
 
         if not os.path.exists(LOG_FILE):
-            return {"staged": [], "added": [], "modified": [], "deleted": [], "conflicts": []}
+            return {"staged": {}, "added": [], "modified": [], "deleted": [], "conflicts": []}
 
         index = load_index()
+        staged = sorted(index.keys())
+        staged_set = set(staged)
         last = leaf_get_last_state()
         last = {path: content for path, content in last.items() if not is_ignored_path(path)}
         current = set(leaf_get_all_files())
         last_files = set(last.keys())
-        added = sorted(current - last_files)
-        deleted = sorted(last_files - current)
+        added = sorted((current - last_files) - staged_set)
+        deleted = sorted((last_files - current) - staged_set)
         modified = []
-        for path in sorted(current & last_files):
+        for path in sorted((current & last_files) - staged_set):
             if not is_binary(path) and leaf_read_file(path) != last[path]:
                 modified.append(path)
         merge_state = load_merge_state()
         conflicts = sorted(merge_state.get("conflicts", [])) if merge_state else []
         return {
-            "staged": sorted(index.keys()),
+            "staged": index,
             "added": added,
             "modified": modified,
             "deleted": deleted,
             "conflicts": conflicts,
         }
+
+
+class ChangeRow(QWidget):
+    def __init__(self, path, marker, checked=False):
+        super().__init__()
+        layout = QHBoxLayout(self)
+        layout.setContentsMargins(8, 4, 8, 4)
+        self.checkbox = QCheckBox()
+        self.checkbox.setChecked(checked)
+        self.marker = QLabel(marker)
+        self.marker.setFixedWidth(22)
+        self.path = QLabel(path)
+        self.path.setTextInteractionFlags(Qt.TextSelectableByMouse)
+        layout.addWidget(self.checkbox)
+        layout.addWidget(self.marker)
+        layout.addWidget(self.path, 1)
 
 
 class OverviewPage(QWidget):
@@ -91,7 +110,7 @@ class OverviewPage(QWidget):
             branch = get_head_module().read_current_branch(VCS_DIR) or "detached"
             head = leaf_get_head_commit_id(log) if log else None
             status = working_tree_status(self.repository)
-            total = sum(len(status[key]) for key in ("added", "modified", "deleted"))
+            total = sum(len(status[key]) for key in ("added", "modified", "deleted", "staged"))
             self.info.setText(
                 f"Current branch:  {branch}\n"
                 f"HEAD:  {head or 'No commits yet'}\n"
@@ -166,9 +185,11 @@ class ChangesPage(QWidget):
     def __init__(self, repository):
         super().__init__()
         self.repository = repository
+        self.rows = []
         layout = QVBoxLayout(self)
         layout.setContentsMargins(28, 28, 28, 28)
         layout.setSpacing(12)
+
         title_row = QHBoxLayout()
         title = QLabel("Changes")
         title.setObjectName("pageTitle")
@@ -178,65 +199,88 @@ class ChangesPage(QWidget):
         title_row.addStretch()
         title_row.addWidget(self.summary)
         layout.addLayout(title_row)
+
         actions = QHBoxLayout()
-        stage_all = QPushButton("Stage All")
-        stage_all.clicked.connect(self.stage_all)
-        unstage_all = QPushButton("Unstage All")
-        unstage_all.clicked.connect(self.unstage_all)
+        stage_selected = QPushButton("Stage Selected")
+        stage_selected.clicked.connect(self.stage_selected)
+        unstage_selected = QPushButton("Unstage Selected")
+        unstage_selected.clicked.connect(self.unstage_selected)
         self.commit_message = QLineEdit()
         self.commit_message.setPlaceholderText("Commit message")
         self.commit_message.returnPressed.connect(self.save_changes)
-        save = QPushButton("Save Changes")
+        save = QPushButton("Save Staged Changes")
         save.setObjectName("saveButton")
         save.clicked.connect(self.save_changes)
-        actions.addWidget(stage_all)
-        actions.addWidget(unstage_all)
+        actions.addWidget(stage_selected)
+        actions.addWidget(unstage_selected)
         actions.addWidget(self.commit_message, 1)
         actions.addWidget(save)
         layout.addLayout(actions)
+
         self.list = QListWidget()
         self.list.setObjectName("changesList")
         layout.addWidget(self.list, 1)
         self.refresh()
 
+    def add_group(self, title, files, marker, staged=False):
+        if not files:
+            return
+        header = QListWidgetItem(title)
+        header.setFlags(Qt.NoItemFlags)
+        self.list.addItem(header)
+        for path in files:
+            row = ChangeRow(path, marker, checked=staged)
+            item = QListWidgetItem()
+            item.setSizeHint(row.sizeHint())
+            self.list.addItem(item)
+            self.list.setItemWidget(item, row)
+            self.rows.append((path, staged, row))
+
     def refresh(self):
         status = working_tree_status(self.repository)
         self.list.clear()
-        groups = [
-            ("STAGED", status["staged"], "✓"),
-            ("ADDED", status["added"], "+"),
-            ("MODIFIED", status["modified"], "M"),
-            ("DELETED", status["deleted"], "−"),
-            ("CONFLICTS", status["conflicts"], "!"),
-        ]
-        total = sum(len(items) for _, items, _ in groups)
-        self.summary.setText("Clean working tree" if total == 0 else f"{total} change(s)")
+        self.rows = []
+        staged = status["staged"]
+        unstaged_count = len(status["added"]) + len(status["modified"]) + len(status["deleted"])
+        total = len(staged) + unstaged_count + len(status["conflicts"])
+        self.summary.setText("Clean working tree" if total == 0 else f"{total} change(s) • {len(staged)} staged")
         if total == 0:
             item = QListWidgetItem("✓  Working tree is clean")
             item.setFlags(Qt.NoItemFlags)
             self.list.addItem(item)
             return
-        for title, files, marker in groups:
-            if not files:
-                continue
-            header = QListWidgetItem(title)
-            header.setFlags(Qt.NoItemFlags)
-            self.list.addItem(header)
-            for path in files:
-                self.list.addItem(f"{marker}  {path}")
 
-    def stage_all(self):
+        self.add_group("STAGED", list(staged.keys()), "✓", True)
+        self.add_group("ADDED", status["added"], "+")
+        self.add_group("MODIFIED", status["modified"], "M")
+        self.add_group("DELETED", status["deleted"], "−")
+        self.add_group("CONFLICTS", status["conflicts"], "!")
+
+    def selected_rows(self, staged):
+        return [path for path, row_staged, row in self.rows if row_staged == staged and row.checkbox.isChecked()]
+
+    def stage_selected(self):
+        paths = self.selected_rows(False)
+        if not paths:
+            self.summary.setText("Select one or more unstaged files")
+            return
         with repository_context(self.repository):
-            from Modules.commands import leaf_add
+            from Modules.staging import leaf_add
             with contextlib.redirect_stdout(io.StringIO()):
-                leaf_add(".")
+                for path in paths:
+                    leaf_add(path)
         self.refresh()
 
-    def unstage_all(self):
+    def unstage_selected(self):
+        paths = self.selected_rows(True)
+        if not paths:
+            self.summary.setText("Select one or more staged files")
+            return
         with repository_context(self.repository):
             from Modules.commands import leaf_reset
             with contextlib.redirect_stdout(io.StringIO()):
-                leaf_reset()
+                for path in paths:
+                    leaf_reset(path)
         self.refresh()
 
     def save_changes(self):
@@ -244,10 +288,13 @@ class ChangesPage(QWidget):
         if not message:
             self.summary.setText("Enter a commit message")
             return
+        status = working_tree_status(self.repository)
+        if not status["staged"]:
+            self.summary.setText("Nothing staged to commit")
+            return
         with repository_context(self.repository):
-            from Modules.commands import leaf_add, leaf_save
+            from Modules.commands import leaf_save
             with contextlib.redirect_stdout(io.StringIO()):
-                leaf_add(".")
                 leaf_save(message)
         self.commit_message.clear()
         self.refresh()
