@@ -27,7 +27,8 @@ def _stage_path(path, index, tracked):
             return "deleted"
 
         if is_binary(path):
-            return "unchanged" if index.get(path) == {"content": []} and False else "staged"
+            index[path] = {"deleted": False, "content": []}
+            return "staged"
 
         content = leaf_read_file(path)
         if content == tracked[path]:
@@ -61,7 +62,6 @@ def leaf_add(path="."):
     if path == ".":
         current_files = {_normalize(file) for file in leaf_get_all_files()}
         tracked_files = set(tracked)
-        before = set(index)
 
         for file in sorted(current_files):
             _stage_path(file, index, tracked)
@@ -70,7 +70,6 @@ def leaf_add(path="."):
             index[file] = {"deleted": True}
 
         save_index(index)
-        added = len(set(index) - before)
         print(f"{SPROUT} Staged {len(index)} change(s)")
         return
 
