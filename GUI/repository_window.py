@@ -1,11 +1,14 @@
+import contextlib
+import io
 import os
 from pathlib import Path
 
-from PySide6.QtCore import Qt
+from PySide6.QtCore import QTimer, Qt
 from PySide6.QtWidgets import (
     QFrame,
     QHBoxLayout,
     QLabel,
+    QLineEdit,
     QListWidget,
     QListWidgetItem,
     QMainWindow,
@@ -14,6 +17,48 @@ from PySide6.QtWidgets import (
     QVBoxLayout,
     QWidget,
 )
+
+
+@contextlib.contextmanager
+def repository_context(path):
+    old = os.getcwd()
+    os.chdir(path)
+    try:
+        yield
+    finally:
+        os.chdir(old)
+
+
+def working_tree_status(repository):
+    with repository_context(repository):
+        from Modules.common import LOG_FILE
+        from Modules.core import leaf_get_last_state
+        from Modules.files import is_binary, is_ignored_path, leaf_get_all_files, leaf_read_file
+        from Modules.storage import load_index, load_merge_state
+
+        if not os.path.exists(LOG_FILE):
+            return {"staged": [], "added": [], "modified": [], "deleted": [], "conflicts": []}
+
+        index = load_index()
+        last = leaf_get_last_state()
+        last = {path: content for path, content in last.items() if not is_ignored_path(path)}
+        current = set(leaf_get_all_files())
+        last_files = set(last.keys())
+        added = sorted(current - last_files)
+        deleted = sorted(last_files - current)
+        modified = []
+        for path in sorted(current & last_files):
+            if not is_binary(path) and leaf_read_file(path) != last[path]:
+                modified.append(path)
+        merge_state = load_merge_state()
+        conflicts = sorted(merge_state.get("conflicts", [])) if merge_state else []
+        return {
+            "staged": sorted(index.keys()),
+            "added": added,
+            "modified": modified,
+            "deleted": deleted,
+            "conflicts": conflicts,
+        }
 
 
 class OverviewPage(QWidget):
@@ -36,25 +81,25 @@ class OverviewPage(QWidget):
         self.refresh()
 
     def refresh(self):
-        old = os.getcwd()
-        try:
-            os.chdir(self.repository)
+        with repository_context(self.repository):
             from Modules.core import leaf_get_head_commit_id
             from Modules.storage import load_branches, safe_load_log
             from Modules.head_utils import get_head_module
             from Modules.common import VCS_DIR
             log = safe_load_log()
             branches = load_branches()
-            branch = get_head_module().read_current_branch(VCS_DIR) or "main"
+            branch = get_head_module().read_current_branch(VCS_DIR) or "detached"
             head = leaf_get_head_commit_id(log) if log else None
+            status = working_tree_status(self.repository)
+            total = sum(len(status[key]) for key in ("added", "modified", "deleted"))
             self.info.setText(
                 f"Current branch:  {branch}\n"
                 f"HEAD:  {head or 'No commits yet'}\n"
                 f"Branches:  {len(branches)}\n"
-                f"Commits:  {len(log)}"
+                f"Commits:  {len(log)}\n"
+                f"Working tree changes:  {total}\n"
+                f"Staged:  {len(status['staged'])}"
             )
-        finally:
-            os.chdir(old)
 
 
 class HistoryPage(QWidget):
@@ -73,9 +118,7 @@ class HistoryPage(QWidget):
 
     def refresh(self):
         self.list.clear()
-        old = os.getcwd()
-        try:
-            os.chdir(self.repository)
+        with repository_context(self.repository):
             from Modules.storage import safe_load_log
             from Modules.core import leaf_get_head_commit_id
             from Modules.graph import commit_chain, commit_map
@@ -91,8 +134,6 @@ class HistoryPage(QWidget):
                     f"{commit['id']}   {commit.get('message', 'No message')}\n"
                     f"{commit.get('time', '')}   •   {commit.get('branch', 'main')}"
                 )
-        finally:
-            os.chdir(old)
 
 
 class BranchesPage(QWidget):
@@ -104,15 +145,14 @@ class BranchesPage(QWidget):
         title = QLabel("Branches")
         title.setObjectName("pageTitle")
         self.list = QListWidget()
+        self.list.setObjectName("historyList")
         layout.addWidget(title)
         layout.addWidget(self.list)
         self.refresh()
 
     def refresh(self):
         self.list.clear()
-        old = os.getcwd()
-        try:
-            os.chdir(self.repository)
+        with repository_context(self.repository):
             from Modules.storage import load_branches
             from Modules.head_utils import get_head_module
             from Modules.common import VCS_DIR
@@ -120,8 +160,6 @@ class BranchesPage(QWidget):
             for name, commit in sorted(load_branches().items()):
                 marker = "  (current)" if name == current else ""
                 self.list.addItem(f"🌿  {name}{marker}\n    {commit or 'No commits'}")
-        finally:
-            os.chdir(old)
 
 
 class ChangesPage(QWidget):
@@ -130,30 +168,89 @@ class ChangesPage(QWidget):
         self.repository = repository
         layout = QVBoxLayout(self)
         layout.setContentsMargins(28, 28, 28, 28)
+        layout.setSpacing(12)
+        title_row = QHBoxLayout()
         title = QLabel("Changes")
         title.setObjectName("pageTitle")
-        self.status = QLabel()
-        self.status.setTextInteractionFlags(Qt.TextSelectableByMouse)
-        layout.addWidget(title)
-        layout.addWidget(self.status)
-        layout.addStretch()
+        self.summary = QLabel()
+        self.summary.setObjectName("muted")
+        title_row.addWidget(title)
+        title_row.addStretch()
+        title_row.addWidget(self.summary)
+        layout.addLayout(title_row)
+        actions = QHBoxLayout()
+        stage_all = QPushButton("Stage All")
+        stage_all.clicked.connect(self.stage_all)
+        unstage_all = QPushButton("Unstage All")
+        unstage_all.clicked.connect(self.unstage_all)
+        self.commit_message = QLineEdit()
+        self.commit_message.setPlaceholderText("Commit message")
+        self.commit_message.returnPressed.connect(self.save_changes)
+        save = QPushButton("Save Changes")
+        save.setObjectName("saveButton")
+        save.clicked.connect(self.save_changes)
+        actions.addWidget(stage_all)
+        actions.addWidget(unstage_all)
+        actions.addWidget(self.commit_message, 1)
+        actions.addWidget(save)
+        layout.addLayout(actions)
+        self.list = QListWidget()
+        self.list.setObjectName("changesList")
+        layout.addWidget(self.list, 1)
         self.refresh()
 
     def refresh(self):
-        old = os.getcwd()
-        try:
-            os.chdir(self.repository)
-            from Modules.storage import load_index
-            from Modules.files import leaf_get_all_files
-            index = load_index()
-            files = leaf_get_all_files()
-            self.status.setText(
-                f"Working tree files:  {len(files)}\n"
-                f"Staged entries:  {len(index)}\n\n"
-                "Detailed staging and diff controls will be added next."
-            )
-        finally:
-            os.chdir(old)
+        status = working_tree_status(self.repository)
+        self.list.clear()
+        groups = [
+            ("STAGED", status["staged"], "✓"),
+            ("ADDED", status["added"], "+"),
+            ("MODIFIED", status["modified"], "M"),
+            ("DELETED", status["deleted"], "−"),
+            ("CONFLICTS", status["conflicts"], "!"),
+        ]
+        total = sum(len(items) for _, items, _ in groups)
+        self.summary.setText("Clean working tree" if total == 0 else f"{total} change(s)")
+        if total == 0:
+            item = QListWidgetItem("✓  Working tree is clean")
+            item.setFlags(Qt.NoItemFlags)
+            self.list.addItem(item)
+            return
+        for title, files, marker in groups:
+            if not files:
+                continue
+            header = QListWidgetItem(title)
+            header.setFlags(Qt.NoItemFlags)
+            self.list.addItem(header)
+            for path in files:
+                self.list.addItem(f"{marker}  {path}")
+
+    def stage_all(self):
+        with repository_context(self.repository):
+            from Modules.commands import leaf_add
+            with contextlib.redirect_stdout(io.StringIO()):
+                leaf_add(".")
+        self.refresh()
+
+    def unstage_all(self):
+        with repository_context(self.repository):
+            from Modules.commands import leaf_reset
+            with contextlib.redirect_stdout(io.StringIO()):
+                leaf_reset()
+        self.refresh()
+
+    def save_changes(self):
+        message = self.commit_message.text().strip()
+        if not message:
+            self.summary.setText("Enter a commit message")
+            return
+        with repository_context(self.repository):
+            from Modules.commands import leaf_add, leaf_save
+            with contextlib.redirect_stdout(io.StringIO()):
+                leaf_add(".")
+                leaf_save(message)
+        self.commit_message.clear()
+        self.refresh()
 
 
 class RepositoryWindow(QMainWindow):
@@ -164,6 +261,10 @@ class RepositoryWindow(QMainWindow):
         self.setWindowTitle(f"Leaf • {Path(repository).name}")
         self.resize(1150, 720)
         self.build_ui()
+        self.refresh_timer = QTimer(self)
+        self.refresh_timer.setInterval(1000)
+        self.refresh_timer.timeout.connect(self.refresh_all)
+        self.refresh_timer.start()
 
     def build_ui(self):
         root = QWidget()
@@ -171,38 +272,49 @@ class RepositoryWindow(QMainWindow):
         layout = QHBoxLayout(root)
         layout.setContentsMargins(0, 0, 0, 0)
         layout.setSpacing(0)
-
         sidebar = QFrame()
         sidebar.setObjectName("sidebar")
         sidebar.setFixedWidth(230)
         side = QVBoxLayout(sidebar)
         side.setContentsMargins(16, 22, 16, 18)
         side.setSpacing(8)
-
         back = QPushButton("←  Repositories")
         back.clicked.connect(self.go_back)
         side.addWidget(back)
-
         name = QLabel(Path(self.repository).name or self.repository)
         name.setObjectName("sidebarRepository")
         side.addWidget(name)
         side.addSpacing(16)
-
         self.nav = QListWidget()
         self.nav.setObjectName("navigation")
         for label in ["Overview", "Changes", "History", "Branches"]:
             self.nav.addItem(label)
         side.addWidget(self.nav, 1)
         layout.addWidget(sidebar)
-
         self.pages = QStackedWidget()
-        self.pages.addWidget(OverviewPage(self.repository))
-        self.pages.addWidget(ChangesPage(self.repository))
-        self.pages.addWidget(HistoryPage(self.repository))
-        self.pages.addWidget(BranchesPage(self.repository))
+        self.overview_page = OverviewPage(self.repository)
+        self.changes_page = ChangesPage(self.repository)
+        self.history_page = HistoryPage(self.repository)
+        self.branches_page = BranchesPage(self.repository)
+        self.pages.addWidget(self.overview_page)
+        self.pages.addWidget(self.changes_page)
+        self.pages.addWidget(self.history_page)
+        self.pages.addWidget(self.branches_page)
         self.nav.currentRowChanged.connect(self.pages.setCurrentIndex)
         self.nav.setCurrentRow(0)
         layout.addWidget(self.pages, 1)
+
+    def refresh_all(self):
+        current = self.pages.currentIndex()
+        self.overview_page.refresh()
+        self.changes_page.refresh()
+        self.history_page.refresh()
+        self.branches_page.refresh()
+        self.pages.setCurrentIndex(current)
+
+    def closeEvent(self, event):
+        self.refresh_timer.stop()
+        super().closeEvent(event)
 
     def go_back(self):
         self.close()
