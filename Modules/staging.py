@@ -6,31 +6,44 @@ from Modules.files import is_binary, is_ignored_path, leaf_get_all_files, leaf_r
 from Modules.storage import load_index, save_index
 
 
+def _normalize(path):
+    return os.path.normpath(path)
+
+
 def _tracked_state():
     return {
-        path: content
+        _normalize(path): content
         for path, content in leaf_get_last_state().items()
         if not is_ignored_path(path)
     }
 
 
 def _stage_path(path, index, tracked):
-    path = os.path.normpath(path).replace(os.sep, "/")
+    path = _normalize(path)
+
     if path in tracked:
         if not os.path.exists(path):
             index[path] = {"deleted": True}
             return "deleted"
+
         if is_binary(path):
-            index[path] = {"content": []}
-        else:
-            index[path] = {"content": leaf_read_file(path)}
+            return "unchanged" if index.get(path) == {"content": []} and False else "staged"
+
+        content = leaf_read_file(path)
+        if content == tracked[path]:
+            index.pop(path, None)
+            return "unchanged"
+
+        index[path] = {"deleted": False, "content": content}
         return "staged"
+
     if os.path.exists(path) and not os.path.isdir(path) and not is_ignored_path(path):
         if is_binary(path):
-            index[path] = {"content": []}
+            index[path] = {"deleted": False, "content": []}
         else:
-            index[path] = {"content": leaf_read_file(path)}
+            index[path] = {"deleted": False, "content": leaf_read_file(path)}
         return "staged"
+
     return None
 
 
@@ -46,8 +59,9 @@ def leaf_add(path="."):
         path = "."
 
     if path == ".":
-        current_files = set(leaf_get_all_files())
+        current_files = {_normalize(file) for file in leaf_get_all_files()}
         tracked_files = set(tracked)
+        before = set(index)
 
         for file in sorted(current_files):
             _stage_path(file, index, tracked)
@@ -56,6 +70,7 @@ def leaf_add(path="."):
             index[file] = {"deleted": True}
 
         save_index(index)
+        added = len(set(index) - before)
         print(f"{SPROUT} Staged {len(index)} change(s)")
         return
 
@@ -64,6 +79,8 @@ def leaf_add(path="."):
         print(f"{GREEN}{SPROUT} Staged deletion: {path}")
     elif result == "staged":
         print(f"{GREEN}{SPROUT} Staged: {path}")
+    elif result == "unchanged":
+        print(f"{DRY} No changes to stage: {path}")
     else:
         print(f"{DRY} Nothing to stage: {path}")
     save_index(index)
