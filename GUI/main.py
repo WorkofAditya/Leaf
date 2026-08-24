@@ -83,6 +83,7 @@ class MainWindow(QMainWindow):
     def __init__(self):
         super().__init__()
         self.manager = RepositoryManager()
+        self.repository_window = None
         self.setWindowTitle("Leaf")
         self.resize(1000, 650)
         self.build_ui()
@@ -165,11 +166,18 @@ class MainWindow(QMainWindow):
         self.refresh()
 
     def open_repository(self, path):
-        QMessageBox.information(
-            self,
-            "Repository",
-            f"Repository selected:\n\n{path}\n\nRepository workspace will be added in the next GUI phase.",
-        )
+        from GUI.repository_window import RepositoryWindow
+
+        self.hide()
+        self.repository_window = RepositoryWindow(path, self.return_to_repositories)
+        self.repository_window.show()
+
+    def return_to_repositories(self):
+        self.repository_window = None
+        self.refresh()
+        self.show()
+        self.raise_()
+        self.activateWindow()
 
 
 def run():
@@ -199,7 +207,31 @@ QLabel#subtitle {
     font-size: 16px;
 }
 
-QListWidget#repositoryList {
+QLabel#pageTitle {
+    font-size: 28px;
+    font-weight: 700;
+}
+
+QLabel#muted {
+    color: #8f9992;
+}
+
+QLabel#repositoryInfo {
+    background: #191d1b;
+    border: 1px solid #2b332e;
+    border-radius: 12px;
+    padding: 18px;
+    font-size: 16px;
+    line-height: 1.5;
+}
+
+QLabel#sidebarRepository {
+    font-size: 18px;
+    font-weight: 600;
+    padding: 8px;
+}
+
+QListWidget#repositoryList, QListWidget#historyList, QListWidget#navigation {
     background: transparent;
     border: none;
     outline: none;
@@ -210,10 +242,28 @@ QListWidget#repositoryList::item {
     border: none;
 }
 
+QListWidget#historyList::item, QListWidget#navigation::item {
+    background: #191d1b;
+    border: 1px solid #2b332e;
+    border-radius: 8px;
+    padding: 12px;
+    margin-bottom: 6px;
+}
+
+QListWidget#navigation::item:selected {
+    background: #26302a;
+    border-color: #3b4a40;
+}
+
 QFrame#repositoryCard {
     background: #191d1b;
     border: 1px solid #2b332e;
     border-radius: 12px;
+}
+
+QFrame#sidebar {
+    background: #151816;
+    border-right: 1px solid #2b332e;
 }
 
 QLabel#repositoryName {
