@@ -77,7 +77,16 @@ def leaf_get_all_files():
 
 
 def leaf_snapshot(commit_path):
-    for file in leaf_get_all_files():
+    try:
+        from Modules.storage import load_index
+        index = load_index()
+    except Exception:
+        index = {}
+
+    files = list(index) if index else leaf_get_all_files()
+    for file in files:
+        if not os.path.exists(file) or os.path.isdir(file):
+            continue
         dest = os.path.join(commit_path, file)
         os.makedirs(os.path.dirname(dest), exist_ok=True)
         shutil.copy2(file, dest)
