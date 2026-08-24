@@ -30,6 +30,10 @@ def repository_context(path):
         os.chdir(old)
 
 
+def _normalize(path):
+    return os.path.normpath(path)
+
+
 def working_tree_status(repository):
     with repository_context(repository):
         from Modules.common import LOG_FILE
@@ -41,12 +45,15 @@ def working_tree_status(repository):
             return {"staged": {}, "added": [], "modified": [], "deleted": [], "conflicts": []}
 
         index = load_index()
-        staged = sorted(index.keys())
-        staged_set = set(staged)
+        staged_set = {_normalize(path) for path in index}
         last = leaf_get_last_state()
-        last = {path: content for path, content in last.items() if not is_ignored_path(path)}
-        current = set(leaf_get_all_files())
-        last_files = set(last.keys())
+        last = {
+            _normalize(path): content
+            for path, content in last.items()
+            if not is_ignored_path(path)
+        }
+        current = {_normalize(path) for path in leaf_get_all_files()}
+        last_files = set(last)
         added = sorted((current - last_files) - staged_set)
         deleted = sorted((last_files - current) - staged_set)
         modified = []
@@ -127,6 +134,7 @@ class HistoryPage(QWidget):
         self.repository = repository
         layout = QVBoxLayout(self)
         layout.setContentsMargins(28, 28, 28, 28)
+        layout.setSpacing(12)
         title = QLabel("History")
         title.setObjectName("pageTitle")
         self.list = QListWidget()
@@ -161,6 +169,7 @@ class BranchesPage(QWidget):
         self.repository = repository
         layout = QVBoxLayout(self)
         layout.setContentsMargins(28, 28, 28, 28)
+        layout.setSpacing(12)
         title = QLabel("Branches")
         title.setObjectName("pageTitle")
         self.list = QListWidget()
@@ -186,6 +195,7 @@ class ChangesPage(QWidget):
         super().__init__()
         self.repository = repository
         self.rows = []
+        self.selected_paths = set()
         layout = QVBoxLayout(self)
         layout.setContentsMargins(28, 28, 28, 28)
         layout.setSpacing(12)
@@ -222,6 +232,13 @@ class ChangesPage(QWidget):
         layout.addWidget(self.list, 1)
         self.refresh()
 
+    def _capture_checked_paths(self):
+        for path, _, row in self.rows:
+            if row.checkbox.isChecked():
+                self.selected_paths.add(_normalize(path))
+            else:
+                self.selected_paths.discard(_normalize(path))
+
     def add_group(self, title, files, marker, staged=False):
         if not files:
             return
@@ -229,15 +246,26 @@ class ChangesPage(QWidget):
         header.setFlags(Qt.NoItemFlags)
         self.list.addItem(header)
         for path in files:
-            row = ChangeRow(path, marker, checked=staged)
+            normalized = _normalize(path)
+            row = ChangeRow(path, marker, checked=normalized in self.selected_paths)
             item = QListWidgetItem()
             item.setSizeHint(row.sizeHint())
             self.list.addItem(item)
             self.list.setItemWidget(item, row)
-            self.rows.append((path, staged, row))
+            self.rows.append((normalized, staged, row))
 
     def refresh(self):
+        self._capture_checked_paths()
         status = working_tree_status(self.repository)
+        visible_paths = {
+            _normalize(path)
+            for path in list(status["staged"])
+            + status["added"]
+            + status["modified"]
+            + status["deleted"]
+            + status["conflicts"]
+        }
+        self.selected_paths.intersection_update(visible_paths)
         self.list.clear()
         self.rows = []
         staged = status["staged"]
@@ -257,7 +285,8 @@ class ChangesPage(QWidget):
         self.add_group("CONFLICTS", status["conflicts"], "!")
 
     def selected_rows(self, staged):
-        return [path for path, row_staged, row in self.rows if row_staged == staged and row.checkbox.isChecked()]
+        self._capture_checked_paths()
+        return [path for path, row_staged, row in self.rows if row_staged == staged and _normalize(path) in self.selected_paths]
 
     def stage_selected(self):
         paths = self.selected_rows(False)
@@ -269,6 +298,7 @@ class ChangesPage(QWidget):
             with contextlib.redirect_stdout(io.StringIO()):
                 for path in paths:
                     leaf_add(path)
+        self.selected_paths.difference_update(_normalize(path) for path in paths)
         self.refresh()
 
     def unstage_selected(self):
@@ -281,6 +311,7 @@ class ChangesPage(QWidget):
             with contextlib.redirect_stdout(io.StringIO()):
                 for path in paths:
                     leaf_reset(path)
+        self.selected_paths.difference_update(_normalize(path) for path in paths)
         self.refresh()
 
     def save_changes(self):
@@ -297,6 +328,7 @@ class ChangesPage(QWidget):
             with contextlib.redirect_stdout(io.StringIO()):
                 leaf_save(message)
         self.commit_message.clear()
+        self.selected_paths.clear()
         self.refresh()
 
 
