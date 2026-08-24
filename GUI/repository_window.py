@@ -20,19 +20,19 @@ class OverviewPage(QWidget):
     def __init__(self, repository):
         super().__init__()
         self.repository = repository
-        self.layout = QVBoxLayout(self)
-        self.layout.setContentsMargins(28, 28, 28, 28)
-        self.layout.setSpacing(18)
-        self.title = QLabel(Path(repository).name or repository)
-        self.title.setObjectName("pageTitle")
-        self.path = QLabel(repository)
-        self.path.setObjectName("muted")
+        layout = QVBoxLayout(self)
+        layout.setContentsMargins(28, 28, 28, 28)
+        layout.setSpacing(18)
+        title = QLabel(Path(repository).name or repository)
+        title.setObjectName("pageTitle")
+        path = QLabel(repository)
+        path.setObjectName("muted")
         self.info = QLabel()
         self.info.setObjectName("repositoryInfo")
-        self.layout.addWidget(self.title)
-        self.layout.addWidget(self.path)
-        self.layout.addWidget(self.info)
-        self.layout.addStretch()
+        layout.addWidget(title)
+        layout.addWidget(path)
+        layout.addWidget(self.info)
+        layout.addStretch()
         self.refresh()
 
     def refresh(self):
@@ -43,17 +43,15 @@ class OverviewPage(QWidget):
             from Modules.storage import load_branches, safe_load_log
             from Modules.head_utils import get_head_module
             from Modules.common import VCS_DIR
-
             log = safe_load_log()
             branches = load_branches()
             branch = get_head_module().read_current_branch(VCS_DIR) or "main"
             head = leaf_get_head_commit_id(log) if log else None
-            commits = len(log)
             self.info.setText(
                 f"Current branch:  {branch}\n"
                 f"HEAD:  {head or 'No commits yet'}\n"
                 f"Branches:  {len(branches)}\n"
-                f"Commits:  {commits}"
+                f"Commits:  {len(log)}"
             )
         finally:
             os.chdir(old)
@@ -81,7 +79,6 @@ class HistoryPage(QWidget):
             from Modules.storage import safe_load_log
             from Modules.core import leaf_get_head_commit_id
             from Modules.graph import commit_chain, commit_map
-
             log = safe_load_log()
             if not log:
                 self.list.addItem("No commits yet.")
@@ -90,12 +87,10 @@ class HistoryPage(QWidget):
             cmap = commit_map(log)
             for commit_id in commit_chain(head, cmap):
                 commit = cmap[commit_id]
-                item = QListWidgetItem(
+                self.list.addItem(
                     f"{commit['id']}   {commit.get('message', 'No message')}\n"
                     f"{commit.get('time', '')}   •   {commit.get('branch', 'main')}"
                 )
-                item.setSizeHint(item.sizeHint())
-                self.list.addItem(item)
         finally:
             os.chdir(old)
 
@@ -121,7 +116,6 @@ class BranchesPage(QWidget):
             from Modules.storage import load_branches
             from Modules.head_utils import get_head_module
             from Modules.common import VCS_DIR
-
             current = get_head_module().read_current_branch(VCS_DIR)
             for name, commit in sorted(load_branches().items()):
                 marker = "  (current)" if name == current else ""
@@ -151,14 +145,11 @@ class ChangesPage(QWidget):
             os.chdir(self.repository)
             from Modules.storage import load_index
             from Modules.files import leaf_get_all_files
-            from Modules.common import VCS_DIR
-
             index = load_index()
             files = leaf_get_all_files()
-            staged = len(index)
             self.status.setText(
                 f"Working tree files:  {len(files)}\n"
-                f"Staged entries:  {staged}\n\n"
+                f"Staged entries:  {len(index)}\n\n"
                 "Detailed staging and diff controls will be added next."
             )
         finally:
@@ -201,10 +192,8 @@ class RepositoryWindow(QMainWindow):
         self.nav.setObjectName("navigation")
         for label in ["Overview", "Changes", "History", "Branches"]:
             self.nav.addItem(label)
-        self.nav.currentRowChanged.connect(self.pages.setCurrentIndex if hasattr(self, "pages") else lambda _: None)
         side.addWidget(self.nav, 1)
-
-        layout.addWidget(side)
+        layout.addWidget(sidebar)
 
         self.pages = QStackedWidget()
         self.pages.addWidget(OverviewPage(self.repository))
