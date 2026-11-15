@@ -134,6 +134,7 @@ def _create_commit(msg, target_state=None, parents=None, branch=None, merge=Fals
     base_state = leaf_rebuild(parent, log) if parent else {}
     commit_data = {
         "id": commit_id,
+        "storage_format": 2,
         "message": msg,
         "time": timestamp,
         "branch": branch if branch is not None else get_head_module().read_current_branch(VCS_DIR),

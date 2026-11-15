@@ -157,6 +157,7 @@ def leaf_import_git():
         base = states.get(parent, {}) if parent else {}
         commit_data = {
             "id": leaf_id,
+            "storage_format": 2,
             "git_sha": sha,
             "message": _git_commit_message(sha),
             "time": _git_commit_timestamp(sha),
@@ -228,7 +229,12 @@ def _commit_state(commit):
     if not commit:
         return {}
     state_dir = os.path.join(COMMITS_DIR, commit["id"], "state")
-    if os.path.isdir(state_dir):
+    has_legacy_state = (
+        commit.get("storage_format") != 2
+        and commit.get("type") != "snapshot"
+        and os.path.isdir(state_dir)
+    )
+    if has_legacy_state:
         state = {}
         for root, _, files in os.walk(state_dir):
             for name in files:
