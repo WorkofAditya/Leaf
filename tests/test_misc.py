@@ -29,8 +29,14 @@ def run(ctx):
     ctx.command(["leaf", "add", ""], contains="Missing path", cwd=empty)
     ctx.command(["leaf", "diff"], contains="No commits", cwd=empty)
     ctx.command(["leaf", "log"], contains="No commits", cwd=empty)
-    ctx.command(["leaf", "restore"], contains="Missing commit id", cwd=empty)
-    ctx.command(["leaf", "revert"], contains="Missing commit id", cwd=empty)
+    missing_restore = ctx.command(
+        ["leaf", "restore"], ok=False, contains="Missing commit id", cwd=empty
+    )
+    ctx.check(missing_restore.returncode == 1, "Restore without a commit id returns an error")
+    missing_revert = ctx.command(
+        ["leaf", "revert"], ok=False, contains="Missing commit id", cwd=empty
+    )
+    ctx.check(missing_revert.returncode == 1, "Revert without a commit id returns an error")
     ctx.command(["leaf", "ignore"], contains="Missing file/folder name", cwd=empty)
     ctx.command(["leaf", "checkout"], contains="Missing branch name", cwd=empty)
     ctx.command(["leaf", "merge"], contains="Missing branch name to merge", cwd=empty)

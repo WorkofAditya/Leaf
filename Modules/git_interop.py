@@ -36,14 +36,23 @@ def _load_json_file(path, default):
 
 
 def _run_git(args, cwd=".", input_data=None):
-    return subprocess.run(
+    result = subprocess.run(
         ["git", *args],
         cwd=cwd,
         input=input_data,
         text=True,
         capture_output=True,
-        check=True,
     )
+    if result.returncode:
+        detail = result.stderr.strip() or result.stdout.strip()
+        command = "git " + " ".join(args)
+        raise subprocess.CalledProcessError(
+            result.returncode,
+            command,
+            output=result.stdout,
+            stderr=detail,
+        )
+    return result
 
 
 def _git_available():
