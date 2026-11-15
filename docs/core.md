@@ -14,9 +14,7 @@
 
 ### `leaf_hash_commit(data)`
 
-Creates a SHA-1 hash from a string. Commit creation truncates this hash to produce compact commit IDs.
-
-Commit ID input includes message text, formatted time, and runtime time data. This makes IDs stable enough for a small educational VCS while keeping them short and readable.
+Creates a SHA-256 digest from a string. Commit creation hashes a canonical JSON representation of the message, timestamp, parent IDs, and saved file contents, then uses a short prefix as the commit ID. Leaf checks existing IDs and commit directories before accepting the prefix, extending it with a new digest when a collision occurs.
 
 ### `leaf_get_head_commit_id(log=None)`
 

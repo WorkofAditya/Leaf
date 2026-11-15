@@ -66,7 +66,7 @@ Behavior:
 ## Important Limitations
 
 - Rebuild follows the **first-parent chain**. Merge commits store multiple parents, but file reconstruction uses the mainline path for deterministic rebuild behavior.
-- Leaf stores text content as lines. Binary files are skipped by the commit-state capture process.
+- Leaf stores UTF-8 text content as lines. Binary files are not included in snapshots or diff commits, and the working-tree writer leaves untracked binary files alone.
 
 ## Commands That Depend on Rebuild
 

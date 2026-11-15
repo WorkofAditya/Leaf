@@ -2,7 +2,7 @@
 
 **Source file:** `leaf`
 
-The top-level `leaf` executable is the command-line entry point. It reads `sys.argv`, identifies the requested command, validates required arguments, and dispatches to functions in `Modules/commands.py`.
+The top-level `leaf` executable is the command-line entry point. It reads `sys.argv`, identifies the requested command, validates required arguments, and dispatches to functions in `Modules/commands.py`. Running `leaf` with no arguments prints the help text; there is no desktop GUI.
 
 ## Role in the Architecture
 

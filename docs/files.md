@@ -19,13 +19,10 @@ Leaf always ignores internal or source-control infrastructure paths such as:
 
 - `.leaf`
 - `.git`
-- `.github`
-- `.gitlab`
 - `__pycache__`
 - `*.pyc`
-- `HEAD`
-- `leaf`
-- `Modules`
+
+Project files such as `.github/`, `.gitlab/`, `HEAD`, `leaf`, and `Modules/` are not reserved by Leaf. They can be tracked like any other project content.
 
 Users can add extra entries to `.leafignore`. Blank lines and comments beginning with `#` are skipped.
 
@@ -53,7 +50,7 @@ Walks the current directory and returns all trackable file paths. Directory name
 
 ### `leaf_snapshot(commit_path)`
 
-Copies every trackable file into the first commit directory. This is used only for snapshot commits, which provide the base state for later diff commits.
+Writes the captured text-file state into the first commit directory. It uses the same state captured for the commit, so binary and ignored files cannot slip into a snapshot.
 
 ## How File Discovery Fits Into Leaf
 

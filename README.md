@@ -145,7 +145,7 @@ Remote-style commands (`remote`, `fetch`, `pull`, and `push`) are currently disa
 ```text
 .leaf/
 ├── commits/             # Commit object directories.
-│   └── <commit-id>/     # Snapshot files or diff/state data for one commit.
+│   └── <commit-id>/     # Snapshot files or line-based diff files for one commit.
 ├── log.json             # Ordered commit metadata.
 ├── log.bak              # Backup of the previous log file.
 ├── branches.json        # Branch name -> commit ID map.
@@ -180,5 +180,8 @@ Detailed internal documentation lives in [`docs/`](docs/main.md):
 - The executable CLI is the top-level `leaf` file.
 - Most behavior lives in `Modules/commands.py`.
 - Repository data is stored as readable JSON plus commit directories.
-- Binary files are skipped for diff generation.
-- The project intentionally favors transparency over advanced VCS features.
+- Leaf tracks UTF-8 text files. Binary files are left in the working tree and are not stored in commits.
+- `leaf add <directory>` stages the files under that directory.
+- Running `leaf` without a command prints the command reference.
+- Leaf uses the Python standard library; Git is only needed for import/export.
+- The project favors readable storage and a small implementation over advanced distributed-VCS features.

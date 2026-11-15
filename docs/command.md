@@ -95,7 +95,7 @@ Merges another branch into the current branch. The merge system supports:
 
 ### `leaf_add(path)`
 
-Stages a file, deleted path, or all trackable files when `path` is `.`. Staged content is stored in `.leaf/index.json`.
+Stages a file, deleted path, or all trackable files when `path` is `.`. When the path is a directory, Leaf walks it recursively and stages the files below it. Binary and ignored files are skipped. Staged content is stored in `.leaf/index.json`.
 
 ### `leaf_reset(arg=None, commit_id=None)`
 
