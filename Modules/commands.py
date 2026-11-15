@@ -1,4 +1,5 @@
 import difflib
+import json
 import os
 import shutil
 import time
@@ -12,12 +13,9 @@ from Modules.common import (
     GREEN,
     GRAY,
     HERB,
-    INDEX_FILE,
     LEAF,
     LOG_FILE,
-    MERGE_STATE_FILE,
     RED,
-    REMOTES_FILE,
     RESET,
     SPROUT,
     TAGS_FILE,
@@ -36,7 +34,6 @@ from Modules.storage import (
     load_branches,
     load_index,
     load_merge_state,
-    load_remotes,
     load_sessions,
     load_tags,
     safe_load_log,
@@ -89,42 +86,64 @@ def _diff_states(base_state, target_state):
 
 def _write_commit_files(commit_path, commit_data, target_state):
     os.makedirs(commit_path, exist_ok=True)
+
     if commit_data["type"] == "snapshot":
-        leaf_snapshot(commit_path)
+        leaf_snapshot(commit_path, target_state)
         return
-    for file, diff in commit_data.get("changes", {}).items():
-        save_path = os.path.join(commit_path, file + ".diff")
-        os.makedirs(os.path.dirname(save_path), exist_ok=True)
-        with open(save_path, "w") as f:
-            f.write("\n".join(diff))
-    for file in target_state:
-        full_path = os.path.join(commit_path, "state", file)
-        os.makedirs(os.path.dirname(full_path), exist_ok=True)
-        with open(full_path, "w") as f:
-            f.writelines(target_state[file])
+
+    for path, diff in commit_data.get("changes", {}).items():
+        diff_path = os.path.join(commit_path, path + ".diff")
+        os.makedirs(os.path.dirname(diff_path), exist_ok=True)
+        with open(diff_path, "w", encoding="utf-8") as stream:
+            stream.write("\n".join(diff))
 
 
 def _create_commit(msg, target_state=None, parents=None, branch=None, merge=False):
     log = safe_load_log()
     timestamp = time.strftime("%Y-%m-%d %H:%M:%S")
-    commit_id = leaf_hash_commit(msg + timestamp + str(time.time()))[:10]
-    commit_path = os.path.join(COMMITS_DIR, commit_id)
     parent = parents[0] if parents else leaf_get_head_commit_id(log)
-    base_state = leaf_rebuild(parent, log) if parent else {}
+
     if target_state is None:
         target_state = _current_working_state()
 
+    parent_ids = [
+        commit_id
+        for commit_id in (parents if parents is not None else ([parent] if parent else []))
+        if commit_id
+    ]
+    payload = json.dumps(
+        {
+            "message": msg,
+            "time": timestamp,
+            "parents": parent_ids,
+            "files": {path: target_state[path] for path in sorted(target_state)},
+        },
+        ensure_ascii=False,
+        sort_keys=True,
+        separators=(",", ":"),
+    )
+
+    existing_ids = {commit.get("id") for commit in log}
+    commit_id = leaf_hash_commit(payload)[:12]
+    attempt = 1
+    while commit_id in existing_ids or os.path.exists(os.path.join(COMMITS_DIR, commit_id)):
+        commit_id = leaf_hash_commit(f"{payload}\0{attempt}")[:12]
+        attempt += 1
+
+    commit_path = os.path.join(COMMITS_DIR, commit_id)
+    base_state = leaf_rebuild(parent, log) if parent else {}
     commit_data = {
         "id": commit_id,
         "message": msg,
         "time": timestamp,
         "branch": branch if branch is not None else get_head_module().read_current_branch(VCS_DIR),
         "parent": parent,
-        "parents": parents or ([parent] if parent else []),
+        "parents": parent_ids,
         "type": "diff",
         "changes": {},
         "deleted": [],
     }
+
     if not log:
         commit_data["type"] = "snapshot"
         commit_data["files"] = sorted(target_state)
@@ -132,6 +151,7 @@ def _create_commit(msg, target_state=None, parents=None, branch=None, merge=Fals
         changes, deleted = _diff_states(base_state, target_state)
         commit_data["changes"] = changes
         commit_data["deleted"] = deleted
+
         if not changes and not deleted and not merge:
             print(f"{DRY} No changes detected, nothing to save")
             return None
@@ -148,6 +168,7 @@ def _create_commit(msg, target_state=None, parents=None, branch=None, merge=Fals
         sessions = load_sessions()
         sessions.pop(active_branch, None)
         save_sessions(sessions)
+
     get_head_module().write_head(VCS_DIR, commit_id)
     clear_index()
     return commit_id
@@ -285,12 +306,15 @@ def leaf_status():
         print(f"{GREEN}{SPROUT} {status}: {path}{RESET}")
     last = leaf_get_last_state()
     last = {path: content for path, content in last.items() if not is_ignored_path(path)}
-    current = set(leaf_get_all_files())
-    last_files = set(last.keys())
-    added, deleted, modified = current - last_files, last_files - current, []
-    for f in current & last_files:
-        if not is_binary(f) and leaf_read_file(f) != last[f]:
-            modified.append(f)
+    current_state = _current_working_state()
+    current_files = set(current_state)
+    last_files = set(last)
+    added = current_files - last_files
+    deleted = last_files - current_files
+    modified = sorted(
+        path for path in current_files & last_files
+        if current_state[path] != last[path]
+    )
     if not added and not deleted and not modified and not index and not merge_state:
         print(f"{HERB} Clean working tree")
         return
@@ -310,7 +334,7 @@ def leaf_version():
                 if text:
                     print(text)
                     return
-        except Exception:
+        except (OSError, UnicodeDecodeError):
             continue
     print(f"{DRY} Could not fetch version from remote")
 
@@ -576,22 +600,58 @@ def leaf_merge_abort():
     print(f"{TREE} Merge aborted")
 
 
+def _paths_to_stage(path):
+    path = os.path.normpath(path)
+
+    if path == ".":
+        return leaf_get_all_files()
+
+    if not os.path.isdir(path):
+        return [path]
+
+    files = []
+    for root, dirs, names in os.walk(path):
+        dirs[:] = sorted(
+            name
+            for name in dirs
+            if not is_ignored_path(os.path.join(root, name))
+        )
+        for name in names:
+            file_path = os.path.relpath(os.path.join(root, name), ".")
+            if not is_ignored_path(file_path):
+                files.append(file_path)
+
+    return sorted(files)
+
+
 def leaf_add(path):
     if not path:
         print(f"{DRY} Missing path")
         return
+
     index = load_index()
-    paths = leaf_get_all_files() if path == "." else [path]
-    added = 0
-    for item in paths:
-        if os.path.exists(item) and not is_binary(item):
-            index[item] = {"deleted": False, "content": leaf_read_file(item)}
-            added += 1
-        elif not os.path.exists(item):
-            index[item] = {"deleted": True, "content": []}
-            added += 1
+    staged = 0
+
+    for file_path in _paths_to_stage(path):
+        file_path = os.path.normpath(file_path)
+
+        if is_ignored_path(file_path):
+            continue
+
+        if os.path.isfile(file_path):
+            if is_binary(file_path):
+                continue
+            index[file_path] = {
+                "deleted": False,
+                "content": leaf_read_file(file_path),
+            }
+            staged += 1
+        elif not os.path.exists(file_path):
+            index[file_path] = {"deleted": True, "content": []}
+            staged += 1
+
     save_index(index)
-    print(f"{SPROUT} Staged {added} path(s)")
+    print(f"{SPROUT} Staged {staged} path(s)")
 
 
 def leaf_reset(arg=None, commit_id=None):
@@ -693,89 +753,6 @@ def leaf_fsck():
 def _repo_leaf_dir(path):
     return os.path.join(path, ".leaf") if not path.endswith(".leaf") else path
 
-
-# Remote repository command implementations are intentionally disabled.
-# The original code remains below as comments for future review/restoration, but
-# these commands are not executed by the CLI.
-# def leaf_remote(args):
-#     remotes = load_remotes()
-#     if not args:
-#         for name, path in sorted(remotes.items()):
-#             print(f"{name} {path}")
-#         return
-#     if args[0] == "add" and len(args) >= 3:
-#         remotes[args[1]] = os.path.abspath(args[2])
-#         save_remotes(remotes)
-#         print(f"{SPROUT} Added remote {args[1]}")
-#         return
-#     print(f"{DRY} Usage: leaf remote [add <name> <path>]")
-#
-#
-# def _copy_commit_objects(src_leaf, dst_leaf):
-#     src_commits = os.path.join(src_leaf, "commits")
-#     dst_commits = os.path.join(dst_leaf, "commits")
-#     os.makedirs(dst_commits, exist_ok=True)
-#     if not os.path.isdir(src_commits):
-#         return
-#     for cid in os.listdir(src_commits):
-#         src = os.path.join(src_commits, cid)
-#         dst = os.path.join(dst_commits, cid)
-#         if os.path.isdir(src) and not os.path.exists(dst):
-#             shutil.copytree(src, dst)
-#
-#
-# def leaf_fetch(remote_name):
-#     remotes = load_remotes()
-#     if remote_name not in remotes:
-#         print(f"{DRY} Unknown remote: {remote_name}")
-#         return
-#     remote_leaf = _repo_leaf_dir(remotes[remote_name])
-#     if not os.path.isdir(remote_leaf):
-#         print(f"{DRY} Remote is not a Leaf repository")
-#         return
-#     from Modules.storage import _load_json
-#     remote_log = _load_json(os.path.join(remote_leaf, "log.json"), [])
-#     local_log = safe_load_log()
-#     local_ids = {c["id"] for c in local_log}
-#     local_log.extend([c for c in remote_log if c["id"] not in local_ids])
-#     safe_save_log(local_log)
-#     _copy_commit_objects(remote_leaf, VCS_DIR)
-#     remote_branches = _load_json(os.path.join(remote_leaf, "branches.json"), {})
-#     branches = load_branches()
-#     for branch, cid in remote_branches.items():
-#         branches[f"{remote_name}/{branch}"] = cid
-#     save_branches(branches)
-#     print(f"{TREE} Fetched {remote_name}")
-#
-#
-# def leaf_push(remote_name, branch_name):
-#     remotes = load_remotes()
-#     if remote_name not in remotes:
-#         print(f"{DRY} Unknown remote: {remote_name}")
-#         return
-#     remote_path = remotes[remote_name]
-#     remote_leaf = _repo_leaf_dir(remote_path)
-#     os.makedirs(remote_leaf, exist_ok=True)
-#     _copy_commit_objects(VCS_DIR, remote_leaf)
-#     from Modules.storage import _atomic_json_save, _load_json
-#     remote_log = _load_json(os.path.join(remote_leaf, "log.json"), [])
-#     remote_ids = {c["id"] for c in remote_log}
-#     remote_log.extend([c for c in safe_load_log() if c["id"] not in remote_ids])
-#     _atomic_json_save(os.path.join(remote_leaf, "log.json"), remote_log)
-#     remote_branches = _load_json(os.path.join(remote_leaf, "branches.json"), {"main": None})
-#     branches = load_branches()
-#     if branch_name not in branches:
-#         print(f"{DRY} Unknown branch: {branch_name}")
-#         return
-#     remote_branches[branch_name] = branches[branch_name]
-#     _atomic_json_save(os.path.join(remote_leaf, "branches.json"), remote_branches)
-#     print(f"{TREE} Pushed {branch_name} to {remote_name}")
-#
-#
-# def leaf_pull(remote_name, branch_name):
-#     leaf_fetch(remote_name)
-#     leaf_merge(f"{remote_name}/{branch_name}")
-#
 
 def leaf_clone(source, dest=None):
     dest = dest or os.path.basename(os.path.abspath(source.rstrip(os.sep))) + "-clone"

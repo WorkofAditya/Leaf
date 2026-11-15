@@ -5,56 +5,56 @@ import os
 def head_file_path(vcs_dir):
     return os.path.join(vcs_dir, "HEAD")
 
+
 def current_branch_path(vcs_dir):
     return os.path.join(vcs_dir, "CURRENT_BRANCH")
 
 
 def init_head(vcs_dir):
     os.makedirs(vcs_dir, exist_ok=True)
+
     path = head_file_path(vcs_dir)
     if not os.path.exists(path):
-        with open(path, "w") as f:
-            f.write("")
+        with open(path, "w", encoding="utf-8") as stream:
+            stream.write("")
+
     branch_path = current_branch_path(vcs_dir)
     if not os.path.exists(branch_path):
-        with open(branch_path, "w") as f:
-            f.write("main")
+        with open(branch_path, "w", encoding="utf-8") as stream:
+            stream.write("main")
 
 
 def read_head(vcs_dir):
-    path = head_file_path(vcs_dir)
-    if not os.path.exists(path):
-        return None
     try:
-        with open(path, "r") as f:
-            value = f.read().strip()
-            return value or None
-    except:
+        with open(head_file_path(vcs_dir), "r", encoding="utf-8") as stream:
+            value = stream.read().strip()
+    except OSError:
         return None
+
+    return value or None
 
 
 def write_head(vcs_dir, commit_id):
-    path = head_file_path(vcs_dir)
-    with open(path, "w") as f:
-        f.write(commit_id.strip() if commit_id else "")
+    value = commit_id.strip() if commit_id else ""
+    with open(head_file_path(vcs_dir), "w", encoding="utf-8") as stream:
+        stream.write(value)
+
 
 def read_current_branch(vcs_dir):
-    path = current_branch_path(vcs_dir)
-    if not os.path.exists(path):
-        return None
     try:
-        with open(path, "r") as f:
-            value = f.read().strip()
-            return value or None
-    except:
+        with open(current_branch_path(vcs_dir), "r", encoding="utf-8") as stream:
+            value = stream.read().strip()
+    except OSError:
         return None
 
+    return value or None
+
+
 def write_current_branch(vcs_dir, branch_name):
-    path = current_branch_path(vcs_dir)
-    with open(path, "w") as f:
-        f.write(branch_name.strip() if branch_name else "")
+    value = branch_name.strip() if branch_name else ""
+    with open(current_branch_path(vcs_dir), "w", encoding="utf-8") as stream:
+        stream.write(value)
 
 
 def resolve_head(vcs_dir, fallback_commit_id):
-    current = read_head(vcs_dir)
-    return current or fallback_commit_id
+    return read_head(vcs_dir) or fallback_commit_id

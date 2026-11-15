@@ -1,48 +1,58 @@
 import os
 
 from Modules.common import COMMITS_DIR
-from Modules.files import leaf_get_all_files, leaf_read_file
-from Modules.graph import first_parent_chain, commit_map
+from Modules.files import is_binary, leaf_get_all_files, leaf_read_file, leaf_write_file
+from Modules.graph import commit_map, first_parent_chain
 
 
 def leaf_rebuild(commit_id, log):
     if not commit_id:
         return {}
+
     files = {}
-    cmap = commit_map(log)
-    chain = list(reversed(first_parent_chain(commit_id, cmap)))
-    for cid in chain:
-        c = cmap[cid]
-        cpath = os.path.join(COMMITS_DIR, cid)
+    commits = commit_map(log)
+    chain = reversed(first_parent_chain(commit_id, commits))
 
-        if c["type"] == "snapshot":
-            for root, _, fs in os.walk(cpath):
-                for f in fs:
-                    rel = os.path.relpath(os.path.join(root, f), cpath)
-                    files[rel] = leaf_read_file(os.path.join(root, f))
-        else:
-            for file in c.get("deleted", []):
-                files.pop(file, None)
+    for commit_id in chain:
+        commit = commits[commit_id]
+        commit_path = os.path.join(COMMITS_DIR, commit_id)
 
-            for file, diff in c.get("changes", {}).items():
-                patched = []
-                for line in diff:
-                    if line.startswith("  ") or line.startswith("+ "):
-                        patched.append(line[2:])
-                files[file] = patched
+        if commit["type"] == "snapshot":
+            for root, _, names in os.walk(commit_path):
+                for name in names:
+                    path = os.path.join(root, name)
+                    if is_binary(path):
+                        continue
+
+                    relative_path = os.path.relpath(path, commit_path)
+                    files[relative_path] = leaf_read_file(path)
+            continue
+
+        for path in commit.get("deleted", []):
+            files.pop(path, None)
+
+        for path, diff in commit.get("changes", {}).items():
+            lines = []
+            for line in diff:
+                if line.startswith(("  ", "+ ")):
+                    lines.append(line[2:])
+            files[path] = lines
+
     return files
 
 
 def write_working_tree(files):
-    current_files = set(leaf_get_all_files())
-    target_files = set(files.keys())
-    for f in current_files - target_files:
+    current_files = {
+        path for path in leaf_get_all_files()
+        if not is_binary(path)
+    }
+    target_files = set(files)
+
+    for path in current_files - target_files:
         try:
-            os.remove(f)
-        except OSError:
+            os.remove(path)
+        except FileNotFoundError:
             pass
 
-    for path, content in files.items():
-        os.makedirs(os.path.dirname(path) or ".", exist_ok=True)
-        with open(path, "w") as f:
-            f.writelines(content)
+    for path, lines in files.items():
+        leaf_write_file(path, lines)

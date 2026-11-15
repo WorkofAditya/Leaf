@@ -15,7 +15,12 @@ def run(ctx: TestContext) -> None:
     ctx.command(["git", "config", "user.email", "leaf-test@example.invalid"])
     ctx.command(["git", "remote", "add", "origin", "https://example.invalid/leaf-test.git"])
     ctx.write("alpha.txt", "one\n")
-    ctx.command(["git", "add", "alpha.txt"])
+    ctx.write("HEAD", "a project file\n")
+    ctx.write("leaf", "a project executable\n")
+    ctx.write("Modules/helper.py", "value = 1\n")
+    ctx.write(".github/workflows/check.yml", "name: check\n")
+    ctx.write(".gitlab-ci.yml", "stages: [test]\n")
+    ctx.command(["git", "add", "-A"])
     ctx.command(["git", "commit", "-m", "initial import"])
     ctx.command(["git", "tag", "v1.0"])
     ctx.command(["git", "checkout", "-b", "feature"])
@@ -46,14 +51,10 @@ def run(ctx: TestContext) -> None:
     ctx.check(remotes == {"origin": "https://example.invalid/leaf-test.git"}, "import preserves Git remotes")
     ctx.check(ctx.read(".leaf/CURRENT_BRANCH") == "main", "import preserves current branch")
 
-    # Leaf ignores its installed runtime files (HEAD, leaf, and Modules). A Git
-    # repository can still track files with those names, so importing must not
-    # leave HEAD pointing at a state that status will immediately report as
-    # deleted just because those paths are intentionally ignored by Leaf.
     status_after_import = ctx.command(["leaf", "status"])
-    ctx.check("Deleted: HEAD" not in status_after_import.stdout, "imported ignored HEAD file is not reported as deleted")
-    ctx.check("Deleted: leaf" not in status_after_import.stdout, "imported ignored leaf executable is not reported as deleted")
-    ctx.check("Deleted: Modules" not in status_after_import.stdout, "imported ignored Modules files are not reported as deleted")
+    ctx.check("Clean working tree" in status_after_import.stdout, "imported repository has no missing tracked files")
+    for path in ("HEAD", "leaf", "Modules/helper.py", ".github/workflows/check.yml", ".gitlab-ci.yml"):
+        ctx.check((ctx.repo / path).is_file(), f"import preserves {path}")
 
     shutil.rmtree(ctx.repo / ".git")
     export_result = ctx.command(["leaf", "export-git"], contains="Exported Leaf repository")
@@ -69,6 +70,11 @@ def run(ctx: TestContext) -> None:
     ctx.assert_file("alpha.txt", "one\n")
     ctx.assert_file("feature.txt", "feature\n")
     ctx.assert_file("main.txt", "main\n")
+    ctx.assert_file("HEAD", "a project file\n")
+    ctx.assert_file("leaf", "a project executable\n")
+    ctx.assert_file("Modules/helper.py", "value = 1\n")
+    ctx.assert_file(".github/workflows/check.yml", "name: check\n")
+    ctx.assert_file(".gitlab-ci.yml", "stages: [test]\n")
 
 
 if __name__ == "__main__":

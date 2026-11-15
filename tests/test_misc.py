@@ -35,6 +35,8 @@ def run(ctx):
     ctx.command(["leaf", "checkout"], contains="Missing branch name", cwd=empty)
     ctx.command(["leaf", "merge"], contains="Missing branch name to merge", cwd=empty)
     ctx.command(["leaf", "clone"], contains="Missing source path", cwd=empty)
+    ctx.command(["leaf"], contains="Usage", cwd=empty)
+    ctx.command(["leaf", "not-a-command"], contains="Unknown command", cwd=empty)
 
     source = ctx.root / "source"
     source.mkdir()
@@ -50,6 +52,11 @@ def run(ctx):
     ctx.command(["leaf", "add", "."], cwd=source)
     ctx.command(["leaf", "save", "initial"], cwd=source)
     first = ctx.commit_ids()[-1]
+    ctx.write("folder/nested/file.txt", "inside folder\n", cwd=source)
+    ctx.command(["leaf", "add", "folder"], cwd=source, contains="Staged 1 path(s)")
+    staged_folder = ctx.load_json(".leaf/index.json", cwd=source)
+    ctx.check("folder/nested/file.txt" in staged_folder, "Adding a directory stages its files")
+    ctx.command(["leaf", "reset"], cwd=source)
     ctx.command(["leaf", "tag", "bad", "not-a-commit"], cwd=source, contains="Invalid commit id")
     ctx.command(["leaf", "tag", "v1", first], cwd=source)
     tags = ctx.command(["leaf", "tag"], cwd=source)
@@ -114,6 +121,20 @@ def run(ctx):
     ctx.command(["leaf", "fsck"], cwd=source, contains="OK")
     ctx.command(["leaf", "help"], cwd=source, contains="Usage")
     ctx.command(["leaf", "version"], cwd=source)
+
+    binary_repo = ctx.root / "binary-repo"
+    binary_repo.mkdir()
+    ctx.repo = binary_repo
+    ctx.command(["leaf", "init"], cwd=binary_repo)
+    ctx.write("notes.txt", "text stays tracked\n", cwd=binary_repo)
+    (binary_repo / "asset.bin").write_bytes(b"image data\0not text")
+    ctx.command(["leaf", "save", "text snapshot"], cwd=binary_repo)
+    snapshot_id = ctx.commit_ids()[-1]
+    snapshot_dir = binary_repo / ".leaf" / "commits" / snapshot_id
+    ctx.check(not (snapshot_dir / "asset.bin").exists(), "Binary files are not copied into snapshots")
+    ctx.command(["leaf", "restore", snapshot_id], cwd=binary_repo)
+    ctx.check((binary_repo / "asset.bin").read_bytes() == b"image data\0not text", "Restore leaves untracked binary files untouched")
+    ctx.assert_file("notes.txt", "text stays tracked\n", cwd=binary_repo)
 
 
 if __name__ == "__main__":

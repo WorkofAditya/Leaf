@@ -1,4 +1,5 @@
 import difflib
+import json
 import os
 import subprocess
 import tempfile
@@ -26,12 +27,12 @@ def _progress(message):
 
 def _load_json_file(path, default):
     try:
-        import json
-        with open(path) as fh:
-            data = json.load(fh)
-        return data if isinstance(data, type(default)) else default
-    except Exception:
+        with open(path, "r", encoding="utf-8") as stream:
+            data = json.load(stream)
+    except (OSError, json.JSONDecodeError):
         return default
+
+    return data if isinstance(data, type(default)) else default
 
 
 def _run_git(args, cwd=".", input_data=None):
@@ -115,23 +116,20 @@ def _diff_states(base_state, target_state):
 
 def _write_leaf_commit_files(commit_path, commit_data, state):
     os.makedirs(commit_path, exist_ok=True)
+
     if commit_data["type"] == "snapshot":
         for path, lines in state.items():
-            full_path = os.path.join(commit_path, path)
-            os.makedirs(os.path.dirname(full_path) or ".", exist_ok=True)
-            with open(full_path, "w") as fh:
-                fh.writelines(lines)
-    else:
-        for path, diff in commit_data.get("changes", {}).items():
-            diff_path = os.path.join(commit_path, path + ".diff")
-            os.makedirs(os.path.dirname(diff_path) or ".", exist_ok=True)
-            with open(diff_path, "w") as fh:
-                fh.write("\n".join(diff))
-        for path, lines in state.items():
-            state_path = os.path.join(commit_path, "state", path)
-            os.makedirs(os.path.dirname(state_path) or ".", exist_ok=True)
-            with open(state_path, "w") as fh:
-                fh.writelines(lines)
+            file_path = os.path.join(commit_path, path)
+            os.makedirs(os.path.dirname(file_path) or ".", exist_ok=True)
+            with open(file_path, "w", encoding="utf-8") as stream:
+                stream.writelines(lines)
+        return
+
+    for path, diff in commit_data.get("changes", {}).items():
+        diff_path = os.path.join(commit_path, path + ".diff")
+        os.makedirs(os.path.dirname(diff_path) or ".", exist_ok=True)
+        with open(diff_path, "w", encoding="utf-8") as stream:
+            stream.write("\n".join(diff))
 
 
 def leaf_import_git():

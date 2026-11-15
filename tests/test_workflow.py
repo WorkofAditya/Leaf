@@ -8,6 +8,10 @@ def run(ctx):
     ctx.command(["leaf", "reset"], contains="Cleared staging area")
     ctx.write("test.txt", "one\n")
     ctx.write("nested/beta.txt", "beta\n")
+    ctx.write("folder/deep/file.txt", "directory staging\n")
+    ctx.command(["leaf", "add", "folder"], contains="Staged 1 path(s)")
+    staged = ctx.load_json(".leaf/index.json")
+    ctx.check("folder/deep/file.txt" in staged, "Directory add stages nested files")
     ctx.command(["leaf", "add", "."])
     ctx.command(["leaf", "save", "first commit"])
     first = ctx.commit_ids()[-1]
@@ -20,6 +24,8 @@ def run(ctx):
     ctx.command(["leaf", "add", "."])
     ctx.command(["leaf", "save", "second commit"])
     second = ctx.commit_ids()[-1]
+    second_commit_dir = ctx.repo / ".leaf" / "commits" / second
+    ctx.check(not (second_commit_dir / "state").exists(), "Diff commit does not duplicate the full repository state")
     ctx.command(["leaf", "status"], contains="Clean working tree")
     ctx.write("test.txt", "one\ntwo\nthree\n")
     ctx.command(["leaf", "diff"], contains="three")
