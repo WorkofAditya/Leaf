@@ -32,12 +32,22 @@ def run(ctx):
     ctx.write("main.txt", "main only\n")
     ctx.command(["leaf", "add", "."])
     ctx.command(["leaf", "save", "main commit"])
+    main_tip = ctx.commit_ids()[-1]
     ctx.command(["leaf", "merge", "missing"], contains="Unknown branch")
     ctx.command(["leaf", "merge", "feature"])
     ctx.assert_file("story.txt", "base\nfeature draft\n")
     ctx.assert_file("main.txt", "main only\n")
     branches = ctx.load_json(".leaf/branches.json")
     ctx.check(branches["feature"] == feature_tip and branches["main"] != base, "Branch pointers updated")
+    merge_commit = ctx.commits()[-1]
+    ctx.check(
+        set(merge_commit.get("parents", [])) == {main_tip, feature_tip},
+        "Merge commit preserves both parent commits",
+    )
+    ctx.check(
+        merge_commit.get("parent") == main_tip,
+        "First parent remains the branch that received the merge",
+    )
 
     ctx.command(["leaf", "branch", "conflict-a"])
     ctx.command(["leaf", "branch", "conflict-b"])
