@@ -41,11 +41,23 @@ def run(ctx):
         ["leaf", "ignore"], ok=False, contains="Missing file/folder name", cwd=empty
     )
     ctx.check(missing_ignore.returncode == 1, "Ignore without a name returns an error")
-    ctx.command(["leaf", "checkout"], contains="Missing branch name", cwd=empty)
-    ctx.command(["leaf", "merge"], contains="Missing branch name to merge", cwd=empty)
-    ctx.command(["leaf", "clone"], contains="Missing source path", cwd=empty)
+    missing_checkout = ctx.command(
+        ["leaf", "checkout"], ok=False, contains="Missing branch name", cwd=empty
+    )
+    ctx.check(missing_checkout.returncode == 1, "Checkout without a branch returns an error")
+    missing_merge = ctx.command(
+        ["leaf", "merge"], ok=False, contains="Missing branch name to merge", cwd=empty
+    )
+    ctx.check(missing_merge.returncode == 1, "Merge without a branch returns an error")
+    missing_clone = ctx.command(
+        ["leaf", "clone"], ok=False, contains="Missing source path", cwd=empty
+    )
+    ctx.check(missing_clone.returncode == 1, "Clone without a source returns an error")
     ctx.command(["leaf"], contains="Usage", cwd=empty)
-    ctx.command(["leaf", "not-a-command"], contains="Unknown command", cwd=empty)
+    unknown_command = ctx.command(
+        ["leaf", "not-a-command"], ok=False, contains="Unknown command", cwd=empty
+    )
+    ctx.check(unknown_command.returncode == 2, "Unknown commands return the usage error code")
 
     source = ctx.root / "source"
     source.mkdir()
