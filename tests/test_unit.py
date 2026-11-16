@@ -1,6 +1,10 @@
 from __future__ import annotations
 
+import contextlib
+import io
 import json
+import shlex
+import sys
 from pathlib import Path
 from unittest.mock import patch
 
@@ -14,7 +18,7 @@ from Modules.graph import (
     first_parent_chain,
     is_ancestor,
 )
-from leaf_test_utils import main_wrapper
+from leaf_test_utils import TestContext, main_wrapper
 
 
 def test_commit_graph(ctx) -> None:
@@ -153,10 +157,42 @@ def test_storage_recovery(ctx) -> None:
     ctx.check(not leftovers, "Atomic JSON writes leave no temporary files behind")
 
 
+def test_failure_diagnostics(ctx) -> None:
+    probe = TestContext(__file__)
+    probe.root = ctx.root / "failure-probe"
+    probe.repo = probe.root / "repo"
+    probe.repo.mkdir(parents=True)
+
+    args = [
+        sys.executable,
+        "-c",
+        "import sys; print('diagnostic output'); sys.exit(9)",
+    ]
+    expected_command = shlex.join(args)
+    captured = io.StringIO()
+    with contextlib.redirect_stdout(captured):
+        result = probe.command(args, cwd=probe.repo)
+        summary_code = probe.summary()
+
+    failure = probe.failures[0]
+    command = failure["command"]
+    report_text = captured.getvalue()
+
+    ctx.check(summary_code == 1, "A failed command makes its test context fail")
+    ctx.check(result.returncode == 9, "The harness preserves a command's real exit code")
+    ctx.check(command["command"] == expected_command, "Failure reports retain the exact shell command")
+    ctx.check(command["cwd"] == str(probe.repo.resolve()), "Failure reports retain the working directory")
+    ctx.check(command["expected_returncode"] == 0 and command["returncode"] == 9, "Failure reports show expected and actual exit codes")
+    ctx.check("diagnostic output" in command["stdout"], "Failure reports retain captured standard output")
+    ctx.check("Command: " + expected_command in report_text, "The final context summary prints the failed command")
+    ctx.check("Working directory: " + str(probe.repo.resolve()) in report_text, "The final context summary prints the command directory")
+
+
 def run(ctx) -> None:
     test_commit_graph(ctx)
     test_file_helpers(ctx)
     test_storage_recovery(ctx)
+    test_failure_diagnostics(ctx)
 
 
 if __name__ == "__main__":
