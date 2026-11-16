@@ -78,6 +78,16 @@ def run(ctx: TestContext) -> None:
     ctx.assert_file(".github/workflows/check.yml", "name: check\n")
     ctx.assert_file(".gitlab-ci.yml", "stages: [test]\n")
 
+    exported_head = (ctx.repo / ".git" / "HEAD").read_text(encoding="utf-8")
+    refusal = ctx.command(
+        ["leaf", "export-git"],
+        contains=".git already exists; refusing to overwrite it",
+    )
+    ctx.check(
+        (ctx.repo / ".git" / "HEAD").read_text(encoding="utf-8") == exported_head,
+        "A repeated export refuses to overwrite the existing Git repository",
+    )
+
 
 if __name__ == "__main__":
     main_wrapper(__file__, run)
