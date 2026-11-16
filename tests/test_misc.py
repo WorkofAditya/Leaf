@@ -30,32 +30,32 @@ def run(ctx):
     ctx.command(["leaf", "diff"], contains="No commits", cwd=empty)
     ctx.command(["leaf", "log"], contains="No commits", cwd=empty)
     missing_restore = ctx.command(
-        ["leaf", "restore"], ok=False, contains="Missing commit id", cwd=empty
+        ["leaf", "restore"], expected_returncode=1, contains="Missing commit id", cwd=empty
     )
     ctx.check(missing_restore.returncode == 1, "Restore without a commit id returns an error")
     missing_revert = ctx.command(
-        ["leaf", "revert"], ok=False, contains="Missing commit id", cwd=empty
+        ["leaf", "revert"], expected_returncode=1, contains="Missing commit id", cwd=empty
     )
     ctx.check(missing_revert.returncode == 1, "Revert without a commit id returns an error")
     missing_ignore = ctx.command(
-        ["leaf", "ignore"], ok=False, contains="Missing file/folder name", cwd=empty
+        ["leaf", "ignore"], expected_returncode=1, contains="Missing file/folder name", cwd=empty
     )
     ctx.check(missing_ignore.returncode == 1, "Ignore without a name returns an error")
     missing_checkout = ctx.command(
-        ["leaf", "checkout"], ok=False, contains="Missing branch name", cwd=empty
+        ["leaf", "checkout"], expected_returncode=1, contains="Missing branch name", cwd=empty
     )
     ctx.check(missing_checkout.returncode == 1, "Checkout without a branch returns an error")
     missing_merge = ctx.command(
-        ["leaf", "merge"], ok=False, contains="Missing branch name to merge", cwd=empty
+        ["leaf", "merge"], expected_returncode=1, contains="Missing branch name to merge", cwd=empty
     )
     ctx.check(missing_merge.returncode == 1, "Merge without a branch returns an error")
     missing_clone = ctx.command(
-        ["leaf", "clone"], ok=False, contains="Missing source path", cwd=empty
+        ["leaf", "clone"], expected_returncode=1, contains="Missing source path", cwd=empty
     )
     ctx.check(missing_clone.returncode == 1, "Clone without a source returns an error")
     ctx.command(["leaf"], contains="Usage", cwd=empty)
     unknown_command = ctx.command(
-        ["leaf", "not-a-command"], ok=False, contains="Unknown command", cwd=empty
+        ["leaf", "not-a-command"], expected_returncode=2, contains="Unknown command", cwd=empty
     )
     ctx.check(unknown_command.returncode == 2, "Unknown commands return the usage error code")
 
