@@ -83,6 +83,7 @@ def run(ctx: TestContext) -> None:
         ["leaf", "export-git"],
         contains=".git already exists; refusing to overwrite it",
     )
+    ctx.check(refusal.returncode == 0, "Repeated export exits without damaging the repository")
     ctx.check(
         (ctx.repo / ".git" / "HEAD").read_text(encoding="utf-8") == exported_head,
         "A repeated export refuses to overwrite the existing Git repository",
