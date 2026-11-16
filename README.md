@@ -174,6 +174,38 @@ Detailed internal documentation lives in [`docs/`](docs/main.md):
 - [`docs/head_utils.md`](docs/head_utils.md) — dynamic loader for the top-level `HEAD` module.
 - [`docs/leaf.md`](docs/leaf.md) — CLI entry point.
 
+## Running the Test Suite
+
+Run the complete test suite from the repository root:
+
+```bash
+python3 tests/run_tests.py
+```
+
+The runner discovers every `tests/test_*.py` suite and executes each one in a separate temporary workspace. Test data is removed after the run, so the test suite does not use or modify your project files.
+
+Useful options:
+
+```bash
+# Show every assertion, command, and subprocess output
+python3 tests/run_tests.py --verbose
+
+# Run one suite
+python3 tests/run_tests.py test_git_interop
+
+# List the discovered suites
+python3 tests/run_tests.py --list
+
+# Increase the per-suite timeout
+python3 tests/run_tests.py --timeout 180
+```
+
+Passes are printed in green, failures in red, and skipped checks in yellow when the terminal supports color. Set `NO_COLOR=1` or use `--no-color` to disable it.
+
+When a check fails, the final report includes the suite, failure message, exact command, working directory, expected and actual exit codes, and captured output where available. The runner exits with status `1` if any suite fails, making it suitable for scripts and CI.
+
+The current suites cover branch switching and merges, commit and restore workflows, Git import/export, CLI error handling, file tracking, commit graph traversal, and storage recovery. Git interoperability checks are skipped when Git is not installed. GitHub Actions runs the full suite against Python 3.10 through 3.13.
+
 ## Development Notes
 
 - Leaf is implemented in Python.
