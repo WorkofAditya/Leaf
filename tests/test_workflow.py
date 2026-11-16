@@ -55,6 +55,18 @@ def run(ctx):
     ctx.command(["leaf", "reset", "gamma.txt"], contains="Unstaged gamma.txt")
     ctx.command(["leaf", "reset", "gamma.txt"], contains="Nothing staged for gamma.txt")
 
+    ctx.command(["leaf", "save", "remove nested file"], contains="Saved commit")
+    deletion_commit = ctx.commits()[-1]
+    ctx.check(
+        "nested/beta.txt" in deletion_commit.get("deleted", []),
+        "Deleted tracked files are recorded in commit metadata",
+    )
+    ctx.check(
+        not (ctx.repo / "nested" / "beta.txt").exists(),
+        "Deleted tracked files stay absent after the commit",
+    )
+    ctx.command(["leaf", "fsck"], contains="Repository integrity OK")
+
 
 if __name__ == "__main__":
     main_wrapper(__file__, run)
