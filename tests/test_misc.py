@@ -37,7 +37,10 @@ def run(ctx):
         ["leaf", "revert"], ok=False, contains="Missing commit id", cwd=empty
     )
     ctx.check(missing_revert.returncode == 1, "Revert without a commit id returns an error")
-    ctx.command(["leaf", "ignore"], contains="Missing file/folder name", cwd=empty)
+    missing_ignore = ctx.command(
+        ["leaf", "ignore"], ok=False, contains="Missing file/folder name", cwd=empty
+    )
+    ctx.check(missing_ignore.returncode == 1, "Ignore without a name returns an error")
     ctx.command(["leaf", "checkout"], contains="Missing branch name", cwd=empty)
     ctx.command(["leaf", "merge"], contains="Missing branch name to merge", cwd=empty)
     ctx.command(["leaf", "clone"], contains="Missing source path", cwd=empty)
