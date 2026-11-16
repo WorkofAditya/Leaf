@@ -166,9 +166,13 @@ def main() -> int:
                 process_error = "Could not start the test process"
 
             elapsed = time.perf_counter() - started
+            report_error = None
             try:
                 report = json.loads(report_path.read_text(encoding="utf-8"))
-            except (OSError, json.JSONDecodeError):
+                if not isinstance(report, dict) or report.get("name") != suite_name:
+                    raise ValueError("Result report has an unexpected structure or suite name")
+            except (OSError, json.JSONDecodeError, ValueError) as exc:
+                report_error = f"Could not read a valid result report: {exc}"
                 report = {
                     "name": suite_name,
                     "passed": 0,
@@ -178,8 +182,22 @@ def main() -> int:
                 }
 
             failures = list(report.get("failures", []))
-            suite_passed = returncode == 0 and report.get("failed", 0) == 0 and process_error is None
-            if not report_path.exists() and not failures:
+            suite_passed = (
+                returncode == 0
+                and report_error is None
+                and report.get("failed", 0) == 0
+                and process_error is None
+            )
+            if report_error:
+                failures.append(
+                    failure_record(
+                        report_error,
+                        f"{sys.executable} {script}",
+                        str(tests_dir),
+                        stderr,
+                    )
+                )
+            elif not report_path.exists() and not failures:
                 failures.append(
                     failure_record(
                         process_error or f"Suite exited with code {returncode} without writing a result report",
