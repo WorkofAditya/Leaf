@@ -333,11 +333,18 @@ def leaf_export_git():
     _progress("Restoring HEAD")
     head_branch = get_head_module().read_current_branch(VCS_DIR)
     head_id = get_head_module().read_head(VCS_DIR) or log[-1]["id"]
+    checkout_sha = None
     if head_branch and branches.get(head_branch) in marks:
+        checkout_sha = marks[branches[head_branch]]
         _run_git(["symbolic-ref", "HEAD", f"refs/heads/{_git_ref_name(head_branch)}"])
     elif head_id in marks:
+        checkout_sha = marks[head_id]
         with open(os.path.join(".git", "HEAD"), "w") as fh:
-            fh.write(marks[head_id] + "\n")
+            fh.write(checkout_sha + "\n")
+    if checkout_sha is None:
+        raise ValueError("Leaf HEAD does not point to an exported commit")
     _progress("Checking out exported HEAD")
-    _run_git(["reset", "--hard", "HEAD"])
+    # Use the object ID instead of the literal "HEAD": projects may contain
+    # a file named HEAD, which makes that revision ambiguous to Git.
+    _run_git(["reset", "--hard", checkout_sha])
     print(f"{LEAF} Exported Leaf repository into .git ({len(log)} commits, {len(branches)} branches, {len(tags)} tags, {len(remotes)} remotes)")
